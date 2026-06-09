@@ -1,5 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNotEmpty, IsNumberString } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNotEmpty,
+  IsNumberString,
+} from 'class-validator';
 
 export class ConvertRecommendationItemDto {
   @ApiProperty({

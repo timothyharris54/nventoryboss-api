@@ -20,6 +20,7 @@ describe('UsersService', () => {
 
   const prismaMock = {
     user: {
+      count: jest.fn(),
       findFirst: jest.fn(),
       findMany: jest.fn(),
     },
@@ -118,6 +119,136 @@ describe('UsersService', () => {
       }),
     ).rejects.toThrow(BadRequestException);
 
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('updates profile fields and replaces assigned roles', async () => {
+    prismaMock.user.findFirst
+      .mockResolvedValueOnce({
+        id: 10n,
+        accountId: 1n,
+        email: 'old@example.com',
+        fullName: 'Old User',
+        isActive: true,
+        userRoles: [{ role: buyerRole }],
+      })
+      .mockResolvedValueOnce(null);
+    prismaMock.role.findMany.mockResolvedValue([plannerRole]);
+    txMock.user.findFirstOrThrow.mockResolvedValue({
+      id: 10n,
+      accountId: 1n,
+      email: 'updated@example.com',
+      fullName: 'Updated User',
+      isActive: true,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+      userRoles: [{ role: plannerRole }],
+    });
+
+    const result = await service.update(1n, 10n, {
+      email: 'updated@example.com',
+      fullName: 'Updated User',
+      roleCodes: [UserRoleCode.planner],
+    });
+
+    expect(txMock.user.update).toHaveBeenCalledWith({
+      where: {
+        id: 10n,
+      },
+      data: {
+        email: 'updated@example.com',
+        fullName: 'Updated User',
+        isActive: undefined,
+      },
+    });
+    expect(txMock.userRole.deleteMany).toHaveBeenCalledWith({
+      where: {
+        accountId: 1n,
+        userId: 10n,
+      },
+    });
+    expect(txMock.userRole.createMany).toHaveBeenCalledWith({
+      data: [{ accountId: 1n, userId: 10n, roleId: 21n }],
+    });
+    expect(result.roles).toEqual([
+      { code: UserRoleCode.planner, displayName: 'Planner' },
+    ]);
+  });
+
+  it('disables a user without changing assigned roles', async () => {
+    prismaMock.user.findFirst.mockResolvedValue({
+      id: 10n,
+      accountId: 1n,
+      email: 'user@example.com',
+      fullName: 'User',
+      isActive: true,
+      userRoles: [{ role: buyerRole }],
+    });
+    txMock.user.findFirstOrThrow.mockResolvedValue({
+      id: 10n,
+      accountId: 1n,
+      email: 'user@example.com',
+      fullName: 'User',
+      isActive: false,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+      userRoles: [{ role: buyerRole }],
+    });
+
+    const result = await service.disable(1n, 10n);
+
+    expect(txMock.user.update).toHaveBeenCalledWith({
+      where: {
+        id: 10n,
+      },
+      data: {
+        email: undefined,
+        fullName: undefined,
+        isActive: false,
+      },
+    });
+    expect(txMock.userRole.deleteMany).not.toHaveBeenCalled();
+    expect(result.isActive).toBe(false);
+  });
+
+  it('rejects disabling the last active system admin', async () => {
+    prismaMock.user.findFirst.mockResolvedValue({
+      id: 10n,
+      accountId: 1n,
+      email: 'admin@example.com',
+      fullName: 'Admin',
+      isActive: true,
+      userRoles: [
+        {
+          role: {
+            id: 30n,
+            code: UserRoleCode.system_admin,
+            displayName: 'System Admin',
+          },
+        },
+      ],
+    });
+    prismaMock.user.count.mockResolvedValue(0);
+
+    await expect(service.disable(1n, 10n)).rejects.toThrow(BadRequestException);
+
+    expect(prismaMock.user.count).toHaveBeenCalledWith({
+      where: {
+        accountId: 1n,
+        id: {
+          not: 10n,
+        },
+        isActive: true,
+        userRoles: {
+          some: {
+            role: {
+              code: UserRoleCode.system_admin,
+              isActive: true,
+            },
+          },
+        },
+      },
+    });
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 });

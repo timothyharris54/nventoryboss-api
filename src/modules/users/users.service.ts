@@ -89,6 +89,13 @@ export class UsersService {
         id: userId,
         accountId,
       },
+      include: {
+        userRoles: {
+          include: {
+            role: true,
+          },
+        },
+      },
     });
 
     if (!existingUser) {
@@ -100,6 +107,17 @@ export class UsersService {
     }
 
     const roles = dto.roleCodes ? await this.resolveRoles(dto.roleCodes) : null;
+    const nextRoleCodes =
+      roles?.map((role) => role.code) ??
+      existingUser.userRoles.map((userRole) => userRole.role.code);
+    const nextIsActive = dto.isActive ?? existingUser.isActive;
+
+    await this.assertSystemAdminAccessRemains(
+      accountId,
+      existingUser,
+      nextIsActive,
+      nextRoleCodes,
+    );
 
     const user = await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
@@ -148,6 +166,10 @@ export class UsersService {
     return this.toUserMaintenanceResponse(user);
   }
 
+  async disable(accountId: bigint, userId: bigint) {
+    return this.update(accountId, userId, { isActive: false });
+  }
+
   private async assertEmailAvailable(
     accountId: bigint,
     email: string,
@@ -186,6 +208,62 @@ export class UsersService {
     }
 
     return roles;
+  }
+
+  private async assertSystemAdminAccessRemains(
+    accountId: bigint,
+    user: {
+      id: bigint;
+      isActive: boolean;
+      userRoles: {
+        role: {
+          code: UserRoleCode;
+        };
+      }[];
+    },
+    nextIsActive: boolean,
+    nextRoleCodes: UserRoleCode[],
+  ) {
+    const currentlyActiveSystemAdmin =
+      user.isActive &&
+      user.userRoles.some(
+        (userRole) => userRole.role.code === UserRoleCode.system_admin,
+      );
+
+    if (!currentlyActiveSystemAdmin) {
+      return;
+    }
+
+    const remainsActiveSystemAdmin =
+      nextIsActive && nextRoleCodes.includes(UserRoleCode.system_admin);
+
+    if (remainsActiveSystemAdmin) {
+      return;
+    }
+
+    const remainingSystemAdmins = await this.prisma.user.count({
+      where: {
+        accountId,
+        id: {
+          not: user.id,
+        },
+        isActive: true,
+        userRoles: {
+          some: {
+            role: {
+              code: UserRoleCode.system_admin,
+              isActive: true,
+            },
+          },
+        },
+      },
+    });
+
+    if (remainingSystemAdmins === 0) {
+      throw new BadRequestException(
+        'At least one active system admin is required.',
+      );
+    }
   }
 
   private toUserMaintenanceResponse(user: {

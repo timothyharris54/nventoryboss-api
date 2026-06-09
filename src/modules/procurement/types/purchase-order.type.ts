@@ -1,4 +1,4 @@
-import { VendorProduct } from "../../vendor-products/dto/vendor-product.type";
+import { VendorProduct } from '../../vendor-products/dto/vendor-product.type';
 export type PurchaseOrderDetail = {
   id: string;
   accountId: string;

@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { Prisma }  from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PlanningSettingsService } from './planning-settings.service';
 
 @Injectable()
@@ -14,12 +14,18 @@ export class SalesDailyService {
     accountId: bigint,
     fromInput: Date,
     toInput: Date,
-  ): Promise<{ deleted: number; insertedEstimate: number; statusesUsed: string[] }> {
+  ): Promise<{
+    deleted: number;
+    insertedEstimate: number;
+    statusesUsed: string[];
+  }> {
     const from = this.startOfDayUtc(fromInput);
     const toExclusive = this.startOfNextDayUtc(toInput);
 
     if (toExclusive <= from) {
-      throw new BadRequestException('Invalid rebuild range: to must be on or after from.');
+      throw new BadRequestException(
+        'Invalid rebuild range: to must be on or after from.',
+      );
     }
 
     const demandStatuses =
@@ -50,13 +56,22 @@ export class SalesDailyService {
       `;
 
       await tx.$executeRaw(
-        this.buildInsertSalesDailySql(accountId, from, toExclusive, demandStatuses),
+        this.buildInsertSalesDailySql(
+          accountId,
+          from,
+          toExclusive,
+          demandStatuses,
+        ),
       );
 
       return Number(deleteResult);
     });
 
-    const insertedEstimate = await this.countRowsInRange(accountId, from, toExclusive);
+    const insertedEstimate = await this.countRowsInRange(
+      accountId,
+      from,
+      toExclusive,
+    );
 
     return {
       deleted,
@@ -70,12 +85,18 @@ export class SalesDailyService {
     productId: bigint,
     fromInput: Date,
     toInput: Date,
-  ): Promise<{ deleted: number; insertedEstimate: number; statusesUsed: string[] }> {
+  ): Promise<{
+    deleted: number;
+    insertedEstimate: number;
+    statusesUsed: string[];
+  }> {
     const from = this.startOfDayUtc(fromInput);
     const toExclusive = this.startOfNextDayUtc(toInput);
 
     if (toExclusive <= from) {
-      throw new BadRequestException('Invalid rebuild range: to must be on or after from.');
+      throw new BadRequestException(
+        'Invalid rebuild range: to must be on or after from.',
+      );
     }
 
     const demandStatuses =
@@ -118,7 +139,7 @@ export class SalesDailyService {
 
       return Number(deleteResult);
     });
-    // The count after the insert gives us an accurate number of rows inserted 
+    // The count after the insert gives us an accurate number of rows inserted
     // for this product in the date range
     const insertedEstimate = await this.countRowsInRangeForProduct(
       accountId,
@@ -126,7 +147,7 @@ export class SalesDailyService {
       from,
       toExclusive,
     );
-    // In practice, the insertedEstimate should match the number of rows 
+    // In practice, the insertedEstimate should match the number of rows
     // we just inserted for this product and date range.
     return {
       deleted,
@@ -217,7 +238,7 @@ export class SalesDailyService {
         date_trunc('day', o."orderedAt")
     `;
   }
-  // The SQL for rebuilding sales daily for a specific product is 
+  // The SQL for rebuilding sales daily for a specific product is
   // similar to the overall rebuild, but includes an additional filter for the productId.
   private buildInsertSalesDailyForProductSql(
     accountId: bigint,

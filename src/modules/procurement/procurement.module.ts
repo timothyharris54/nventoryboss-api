@@ -10,10 +10,9 @@ import { InventoryModule } from '../inventory/inventory.module';
   providers: [
     ProcurementService,
     RecommendationConversionService,
-    VendorProductSelectorService
+    VendorProductSelectorService,
   ],
   imports: [InventoryModule],
   exports: [ProcurementService, RecommendationConversionService],
 })
-
 export class ProcurementModule {}

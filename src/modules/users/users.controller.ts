@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRoleCode } from '@prisma/client';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles } from 'src/modules/auth/decorators/roles.decorator';
@@ -42,6 +50,18 @@ export class UsersController {
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
   ) {
-    return this.usersService.update(identity.accountId, BigInt(id), updateUserDto);
+    return this.usersService.update(
+      identity.accountId,
+      BigInt(id),
+      updateUserDto,
+    );
+  }
+
+  @Patch(':id/disable')
+  disable(
+    @CurrentIdentity() identity: RequestIdentity,
+    @Param('id') id: string,
+  ) {
+    return this.usersService.disable(identity.accountId, BigInt(id));
   }
 }

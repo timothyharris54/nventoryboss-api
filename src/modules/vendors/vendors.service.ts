@@ -1,13 +1,17 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 
 type VendorInput = {
-  accountId: bigint,
-  createVendorDto: CreateVendorDto
-}
+  accountId: bigint;
+  createVendorDto: CreateVendorDto;
+};
 
 @Injectable()
 export class VendorsService {
@@ -17,7 +21,7 @@ export class VendorsService {
     const accountId = input.accountId;
     const dto = input.createVendorDto;
 
-    return this.prisma.vendor.create({  
+    return this.prisma.vendor.create({
       data: {
         accountId,
         name: dto.name,
@@ -33,8 +37,7 @@ export class VendorsService {
   }
 
   async findAll(accountId: bigint) {
-    
-    return this.prisma.vendor.findMany({  
+    return this.prisma.vendor.findMany({
       where: {
         accountId,
       },
@@ -44,7 +47,11 @@ export class VendorsService {
     });
   }
 
-  async update(input: { accountId: bigint, id: bigint, updateVendorDto: UpdateVendorDto }) {
+  async update(input: {
+    accountId: bigint;
+    id: bigint;
+    updateVendorDto: UpdateVendorDto;
+  }) {
     const { accountId, id, updateVendorDto } = input;
 
     // Check if the vendor exists and belongs to the account
@@ -53,7 +60,7 @@ export class VendorsService {
         id,
         accountId,
       },
-    }); // Changed to lowercase 
+    }); // Changed to lowercase
     if (!existingVendor) {
       throw new NotFoundException('Vendor not found');
     }
@@ -66,7 +73,6 @@ export class VendorsService {
       data: {
         ...updateVendorDto,
       },
-    }); 
+    });
   }
-
 }

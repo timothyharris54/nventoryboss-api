@@ -70,7 +70,7 @@ export class ReplenishmentEngineService {
     let rawRecommendedQty = 0;
     let recommendedQty = 0;
     let recommendation: any = null;
-    let daysUntilStockout =
+    const daysUntilStockout =
       avgDailySales > 0
         ? this.roundToTwo(inventoryPosition.qtyAvailable / avgDailySales)
         : null;
