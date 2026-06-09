@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Param,
-  Patch,
-  UseGuards,
-  Get,
-} from '@nestjs/common';
+import { Controller, Param, Patch, UseGuards, Get } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { CurrentIdentity } from 'src/modules/auth/decorators/current-identity.decorator';
@@ -18,40 +12,35 @@ import { RecommendationStatus } from '@prisma/client';
 @ApiBearerAuth()
 export class RecommendationsController {
   constructor(
-    private readonly recommendationsService: RecommendationsService ,
+    private readonly recommendationsService: RecommendationsService,
   ) {}
 
-    @Patch(':id/dismiss')
-    async cancel(
-        @CurrentIdentity() identity: RequestIdentity,
-        @Param('id') id: string
-    ) {
-        return this.recommendationsService
-            .dismiss(identity.accountId, id);
-    }
+  @Patch(':id/dismiss')
+  async cancel(
+    @CurrentIdentity() identity: RequestIdentity,
+    @Param('id') id: string,
+  ) {
+    return this.recommendationsService.dismiss(identity.accountId, id);
+  }
 
-    @Patch(':id/review')
-    async review(
-        @CurrentIdentity() identity: RequestIdentity,
-        @Param('id') id: string
-    ) {
-        return this.recommendationsService
-            .review(identity.accountId, id);
-    }
+  @Patch(':id/review')
+  async review(
+    @CurrentIdentity() identity: RequestIdentity,
+    @Param('id') id: string,
+  ) {
+    return this.recommendationsService.review(identity.accountId, id);
+  }
 
-    @Get('all')
-    async findAll(
-        @CurrentIdentity() identity: RequestIdentity,
-    ) {
-        return this.recommendationsService
-            .findAll(identity.accountId);
-    }
+  @Get('all')
+  async findAll(@CurrentIdentity() identity: RequestIdentity) {
+    return this.recommendationsService.findAll(identity.accountId);
+  }
 
-    @Get('open')
-    async findOpen(
-        @CurrentIdentity() identity: RequestIdentity,
-    ) {
-        return this.recommendationsService
-            .findByStatus(identity.accountId, RecommendationStatus.open);
-    }
+  @Get('open')
+  async findOpen(@CurrentIdentity() identity: RequestIdentity) {
+    return this.recommendationsService.findByStatus(
+      identity.accountId,
+      RecommendationStatus.open,
+    );
+  }
 }

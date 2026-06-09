@@ -7,7 +7,7 @@ import { LoginDto } from 'src/modules/auth/dto/login.dto';
 @ApiTags('Auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-    
+
   @Post('login')
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto.email, dto.password, dto.roleCode);

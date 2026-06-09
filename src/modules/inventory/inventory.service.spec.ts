@@ -1,6 +1,13 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Prisma, InventoryEventType, ReferenceType, AdjustmentReasonCodes, ReservationSourceType, ReservationStatus } from '@prisma/client';
+import {
+  Prisma,
+  InventoryEventType,
+  ReferenceType,
+  AdjustmentReasonCodes,
+  ReservationSourceType,
+  ReservationStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { InventoryBalanceService } from './services/inventory-balance.service';
 import { InventoryService } from './inventory.service';
@@ -46,6 +53,7 @@ describe('InventoryService', () => {
     };
 
     prismaMock.inventoryLedger = {
+      findUnique: jest.fn(),
       findMany: jest.fn(),
       create: jest.fn(),
     };
@@ -56,12 +64,12 @@ describe('InventoryService', () => {
 
     prismaMock.inventoryLedger.findMany.mockResolvedValue([]);
     prismaMock.inventoryBalance.findMany.mockResolvedValue([]);
-    
+
     prismaMock.inventoryReservation = {
       findFirst: jest.fn(),
       findMany: jest.fn(),
       create: jest.fn(),
-      update: jest.fn()
+      update: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -83,6 +91,128 @@ describe('InventoryService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('postExternalChannelSaleEvent', () => {
+    it('uses the external channel line id for idempotent sale ledger impact', async () => {
+      const orderLine = {
+        id: 8001n,
+        accountId: 1n,
+        orderId: 7001n,
+        productId: 123n,
+        channelLineId: '10001',
+        quantity: new Prisma.Decimal('2'),
+        order: {
+          channel: 'woocommerce',
+          channelOrderId: '9001',
+          orderedAt: new Date('2026-05-30T14:15:00Z'),
+        },
+        product: {
+          id: 123n,
+        },
+      };
+      prismaMock.orderLine.findUnique.mockResolvedValue(orderLine);
+      prismaMock.inventoryLedger.findUnique.mockResolvedValue(null);
+      txMock.inventoryLedger.create.mockResolvedValue({ id: 9501n });
+
+      await expect(
+        service.postExternalChannelSaleEvent({
+          accountId: 1n,
+          orderLineId: 8001n,
+          locationCode: 'MAIN',
+        }),
+      ).resolves.toEqual({
+        action: 'created',
+        ledgerEntry: { id: 9501n },
+      });
+
+      expect(prismaMock.inventoryLedger.findUnique).toHaveBeenCalledWith({
+        where: {
+          accountId_externalEventKey: {
+            accountId: 1n,
+            externalEventKey: '1:woocommerce:order:9001:line:10001:sale',
+          },
+        },
+      });
+      expect(txMock.inventoryLedger.create).toHaveBeenCalledWith({
+        data: {
+          accountId: 1n,
+          productId: 123n,
+          locationCode: 'MAIN',
+          eventType: InventoryEventType.sale,
+          quantityDelta: new Prisma.Decimal('-2'),
+          referenceType: ReferenceType.order,
+          referenceId: 7001n,
+          externalEventKey: '1:woocommerce:order:9001:line:10001:sale',
+          occurredAt: new Date('2026-05-30T14:15:00Z'),
+          notes: 'Sale for woocommerce order 9001',
+        },
+      });
+      expect(
+        inventoryBalanceServiceMock.recalculateInventoryBalanceForProduct,
+      ).toHaveBeenCalledWith(1n, 123n, 'MAIN', txMock);
+    });
+
+    it('returns the existing sale ledger entry when it has already posted', async () => {
+      prismaMock.orderLine.findUnique.mockResolvedValue({
+        id: 8001n,
+        accountId: 1n,
+        orderId: 7001n,
+        productId: 123n,
+        channelLineId: '10001',
+        quantity: new Prisma.Decimal('2'),
+        order: {
+          channel: 'woocommerce',
+          channelOrderId: '9001',
+          orderedAt: new Date('2026-05-30T14:15:00Z'),
+        },
+        product: {
+          id: 123n,
+        },
+      });
+      prismaMock.inventoryLedger.findUnique.mockResolvedValue({ id: 9501n });
+
+      await expect(
+        service.postExternalChannelSaleEvent({
+          accountId: 1n,
+          orderLineId: 8001n,
+        }),
+      ).resolves.toEqual({
+        action: 'existing',
+        ledgerEntry: { id: 9501n },
+      });
+
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(
+        inventoryBalanceServiceMock.recalculateInventoryBalanceForProduct,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rejects external sale posting when the order line lacks a channel line id', async () => {
+      prismaMock.orderLine.findUnique.mockResolvedValue({
+        id: 8001n,
+        accountId: 1n,
+        orderId: 7001n,
+        productId: 123n,
+        channelLineId: null,
+        quantity: new Prisma.Decimal('2'),
+        order: {
+          channel: 'woocommerce',
+          channelOrderId: '9001',
+          orderedAt: new Date('2026-05-30T14:15:00Z'),
+        },
+        product: {
+          id: 123n,
+        },
+      });
+
+      await expect(
+        service.postExternalChannelSaleEvent({
+          accountId: 1n,
+          orderLineId: 8001n,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 
   describe('postAdjustmentEvent', () => {
@@ -213,7 +343,7 @@ describe('InventoryService', () => {
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
       expect(txMock.inventoryLedger.create).not.toHaveBeenCalled();
     });
-    
+
     it('rejects invalid occurredAt', async () => {
       await expect(
         service.postAdjustmentEvent({
@@ -288,7 +418,7 @@ describe('InventoryService', () => {
       prismaMock.location.findUnique
         .mockResolvedValueOnce({ accountId: 1n, code: 'MAIN', isActive: true })
         .mockResolvedValueOnce({ accountId: 1n, code: 'ORL', isActive: true });
- 
+
       prismaMock.inventoryBalance.findUnique.mockResolvedValue({
         accountId: 1n,
         productId: 11n,
@@ -384,7 +514,7 @@ describe('InventoryService', () => {
             locationCode: 'MAIN',
           },
         },
-      });      
+      });
     });
 
     it('rejects same source and destination', async () => {
@@ -401,7 +531,9 @@ describe('InventoryService', () => {
       });
 
       await expect(promise).rejects.toThrow(BadRequestException);
-      await expect(promise).rejects.toThrow('fromLocationCode and toLocationCode must be different');
+      await expect(promise).rejects.toThrow(
+        'fromLocationCode and toLocationCode must be different',
+      );
 
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
       expect(txMock.inventoryLedger.create).not.toHaveBeenCalled();
@@ -416,12 +548,14 @@ describe('InventoryService', () => {
           toLocationCode: 'SECONDARY',
           quantity: '0',
           notes: 'Test transfer',
-          occurredAt: '2026-04-18T12:33:33.333Z'
-        }
+          occurredAt: '2026-04-18T12:33:33.333Z',
+        },
       });
 
       await expect(promise).rejects.toThrow(BadRequestException);
-      await expect(promise).rejects.toThrow('quantity must be greater than zero.');
+      await expect(promise).rejects.toThrow(
+        'quantity must be greater than zero.',
+      );
 
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
       expect(txMock.inventoryLedger.create).not.toHaveBeenCalled();
@@ -441,7 +575,9 @@ describe('InventoryService', () => {
       });
 
       await expect(promise).rejects.toThrow(BadRequestException);
-      await expect(promise).rejects.toThrow('quantity must be greater than zero.');
+      await expect(promise).rejects.toThrow(
+        'quantity must be greater than zero.',
+      );
 
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
       expect(txMock.inventoryLedger.create).not.toHaveBeenCalled();
@@ -451,7 +587,11 @@ describe('InventoryService', () => {
       prismaMock.product.findFirst.mockResolvedValue({ id: 11n });
       prismaMock.location.findUnique
         .mockResolvedValueOnce(null) // source missing
-        .mockResolvedValueOnce({ accountId: 1n, code: 'SECONDARY', isActive: true });
+        .mockResolvedValueOnce({
+          accountId: 1n,
+          code: 'SECONDARY',
+          isActive: true,
+        });
 
       const promise = service.postTransferEvent({
         accountId: 1n,
@@ -504,7 +644,11 @@ describe('InventoryService', () => {
     it('rejects inactive source location', async () => {
       prismaMock.product.findFirst.mockResolvedValue({ id: 11n });
       prismaMock.location.findUnique
-        .mockResolvedValueOnce({ accountId: 1n, code: 'INACTIVE_SOURCE', isActive: false })
+        .mockResolvedValueOnce({
+          accountId: 1n,
+          code: 'INACTIVE_SOURCE',
+          isActive: false,
+        })
         .mockResolvedValueOnce({ accountId: 1n, code: 'MAIN', isActive: true });
 
       const promise = service.postTransferEvent({
@@ -528,7 +672,11 @@ describe('InventoryService', () => {
       prismaMock.product.findFirst.mockResolvedValue({ id: 11n });
       prismaMock.location.findUnique
         .mockResolvedValueOnce({ accountId: 1n, code: 'MAIN', isActive: true })
-        .mockResolvedValueOnce({ accountId: 1n, code: 'INACTIVE_DESTINATION', isActive: false });
+        .mockResolvedValueOnce({
+          accountId: 1n,
+          code: 'INACTIVE_DESTINATION',
+          isActive: false,
+        });
 
       const promise = service.postTransferEvent({
         accountId: 1n,
@@ -566,7 +714,7 @@ describe('InventoryService', () => {
       await expect(promise).rejects.toThrow('Product 11 not found');
 
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
-    });    
+    });
 
     it('rejects insufficient available quantity at source location', async () => {
       prismaMock.product.findFirst.mockResolvedValue({ id: 11n });
@@ -606,13 +754,11 @@ describe('InventoryService', () => {
       expect(
         inventoryBalanceServiceMock.recalculateInventoryBalanceForProduct,
       ).not.toHaveBeenCalled();
-    });    
-    
+    });
   });
 
   describe('getLedger', () => {
     it('constructs correct query filters', async () => {
-      
       const accountId = 1n;
       const query = {
         productId: '11',
@@ -685,7 +831,7 @@ describe('InventoryService', () => {
           skip: 0,
         }),
       );
-    });    
+    });
 
     it('handles invalid date formats', async () => {
       const accountId = 1n;
@@ -693,9 +839,13 @@ describe('InventoryService', () => {
         fromOccurredAt: 'invalid-date',
       };
 
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('Invalid fromOccurredAt date invalid-date');
-    }); 
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'Invalid fromOccurredAt date invalid-date',
+      );
+    });
 
     it('handles non-integer take/skip values', async () => {
       const accountId = 1n;
@@ -704,8 +854,12 @@ describe('InventoryService', () => {
         skip: 'also-not-a-number' as any,
       };
 
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('Invalid take value not-a-number');
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'Invalid take value not-a-number',
+      );
     });
 
     it('handles negative take/skip values', async () => {
@@ -715,8 +869,12 @@ describe('InventoryService', () => {
         skip: -10,
       };
 
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('Invalid take value -5');
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'Invalid take value -5',
+      );
     });
 
     it('handles zero take value', async () => {
@@ -724,9 +882,13 @@ describe('InventoryService', () => {
       const query = {
         take: 0,
       };
-      
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('Invalid take value 0');  
+
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'Invalid take value 0',
+      );
     });
 
     it('handles zero skip value', async () => {
@@ -734,9 +896,13 @@ describe('InventoryService', () => {
       const query = {
         skip: 0,
       };
-      
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('Invalid skip value 0');  
+
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'Invalid skip value 0',
+      );
     });
 
     it('handles non-integer productId', async () => {
@@ -744,19 +910,27 @@ describe('InventoryService', () => {
       const query = {
         productId: 'not-a-number',
       };
-      
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('Invalid productId not-a-number');
+
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'Invalid productId not-a-number',
+      );
     });
-    
+
     it('handles empty string productId', async () => {
       const accountId = 1n;
       const query = {
         productId: '',
       };
-      
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('Invalid productId ');  
+
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'Invalid productId ',
+      );
     });
 
     it('handles empty string locationCode', async () => {
@@ -764,9 +938,13 @@ describe('InventoryService', () => {
       const query = {
         locationCode: '',
       };
-      
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('Invalid locationCode ');
+
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'Invalid locationCode ',
+      );
     });
 
     it('handles invalid eventType', async () => {
@@ -774,9 +952,13 @@ describe('InventoryService', () => {
       const query = {
         eventType: 'not-a-valid-event-type' as InventoryEventType,
       };
-      
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('Invalid eventType not-a-valid-event-type');  
+
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'Invalid eventType not-a-valid-event-type',
+      );
     });
 
     it('handles fromOccurredAt after toOccurredAt', async () => {
@@ -785,9 +967,13 @@ describe('InventoryService', () => {
         fromOccurredAt: '2026-12-31T23:59:59.999Z',
         toOccurredAt: '2026-01-01T00:00:00.000Z',
       };
-      
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('fromOccurredAt must be before toOccurredAt');
+
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'fromOccurredAt must be before toOccurredAt',
+      );
     });
 
     it('handles fromOccurredAt equal to toOccurredAt', async () => {
@@ -796,9 +982,13 @@ describe('InventoryService', () => {
         fromOccurredAt: '2026-01-01T00:00:00.000Z',
         toOccurredAt: '2026-01-01T00:00:00.000Z',
       };
-      
-      await expect(service.getLedger(accountId, query)).rejects.toThrow(BadRequestException);
-      await expect(service.getLedger(accountId, query)).rejects.toThrow('fromOccurredAt must be before toOccurredAt');
+
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getLedger(accountId, query)).rejects.toThrow(
+        'fromOccurredAt must be before toOccurredAt',
+      );
     });
 
     it('filters by productId only', async () => {
@@ -806,7 +996,7 @@ describe('InventoryService', () => {
       const query = {
         productId: '11',
       };
-      
+
       await service.getLedger(accountId, query);
       expect(prismaMock.inventoryLedger.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -826,7 +1016,7 @@ describe('InventoryService', () => {
       const query = {
         locationCode: 'MAIN',
       };
-      
+
       await service.getLedger(accountId, query);
       expect(prismaMock.inventoryLedger.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -846,7 +1036,7 @@ describe('InventoryService', () => {
       const query = {
         eventType: InventoryEventType.adjustment,
       };
-      
+
       await service.getLedger(accountId, query);
       expect(prismaMock.inventoryLedger.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -859,7 +1049,6 @@ describe('InventoryService', () => {
           skip: 0,
         }),
       );
-
     });
 
     it('filters by occurredAt range only', async () => {
@@ -868,7 +1057,7 @@ describe('InventoryService', () => {
         fromOccurredAt: '2026-01-01T00:00:00.000Z',
         toOccurredAt: '2026-12-31T23:59:59.999Z',
       };
-      
+
       await service.getLedger(accountId, query);
       expect(prismaMock.inventoryLedger.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -884,7 +1073,7 @@ describe('InventoryService', () => {
           skip: 0,
         }),
       );
-      });
+    });
 
     it('applies pagination', async () => {
       const accountId = 1n;
@@ -892,7 +1081,7 @@ describe('InventoryService', () => {
         take: 10,
         skip: 20,
       };
-      
+
       await service.getLedger(accountId, query);
       expect(prismaMock.inventoryLedger.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -924,10 +1113,9 @@ describe('InventoryService', () => {
 
       expect(result[0].movementDirection).toBe('inbound');
       expect(result[1].movementDirection).toBe('outbound');
-    });    
-
+    });
   });
-  
+
   describe('getBalances', () => {
     it('returns current balance for product and location', async () => {
       const accountId = 1n;
@@ -981,7 +1169,10 @@ describe('InventoryService', () => {
 
       prismaMock.inventoryBalance.findMany.mockResolvedValue([]);
 
-      const result = await service.getBalances(accountId, { productId, locationCode });
+      const result = await service.getBalances(accountId, {
+        productId,
+        locationCode,
+      });
 
       expect(prismaMock.inventoryBalance.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1000,60 +1191,87 @@ describe('InventoryService', () => {
       const accountId = 1n;
       const filters = { productId: 'not-a-number', locationCode: 'MAIN' };
 
-
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow(BadRequestException);
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow('Invalid productId not-a-number');
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        'Invalid productId not-a-number',
+      );
     });
 
     it('handles empty string productId', async () => {
       const accountId = 1n;
       const filters = { productId: '', locationCode: 'MAIN' };
 
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow(BadRequestException);
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow('Invalid productId ');  
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        'Invalid productId ',
+      );
     });
 
     it('handles empty string locationCode', async () => {
       const accountId = 1n;
       const filters = { productId: '11', locationCode: '' };
 
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow(BadRequestException);
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow('Invalid locationCode ');  
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        'Invalid locationCode ',
+      );
     });
 
     it('handles missing productId', async () => {
       const accountId = 1n;
       const filters = { locationCode: 'MAIN' };
 
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow(BadRequestException);
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow('productId is required');  
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        'productId is required',
+      );
     });
 
     it('handles missing locationCode', async () => {
       const accountId = 1n;
       const filters = { productId: '11' };
 
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow(BadRequestException);
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow('locationCode is required');  
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        'locationCode is required',
+      );
     });
 
     it('filters by productId only', async () => {
       const accountId = 1n;
       const filters = { productId: '11' };
 
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow(BadRequestException);
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow('locationCode is required');  
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        'locationCode is required',
+      );
     });
 
-     it('filters by locationCode only', async () => {
+    it('filters by locationCode only', async () => {
       const accountId = 1n;
       const filters = { locationCode: 'MAIN' };
 
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow(BadRequestException);
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow('productId is required');  
-     });
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        'productId is required',
+      );
+    });
 
-     it('supports only non-zero quantity balances', async () => {
+    it('supports only non-zero quantity balances', async () => {
       const accountId = 1n;
       const productId = 11n;
       const locationCode = 'MAIN';
@@ -1096,20 +1314,29 @@ describe('InventoryService', () => {
           qtyAvailable: new Prisma.Decimal('0'),
         },
       ]);
-     });
+    });
 
-     it('handles database errors gracefully', async () => {
+    it('handles database errors gracefully', async () => {
       const accountId = 1n;
       const filters = { productId: '11', locationCode: 'MAIN' };
 
-      prismaMock.inventoryBalance.findMany.mockRejectedValue(new Error('Database error'));
+      prismaMock.inventoryBalance.findMany.mockRejectedValue(
+        new Error('Database error'),
+      );
 
-      await expect(service.getBalances(accountId, filters)).rejects.toThrow('Database error');
-     });
+      await expect(service.getBalances(accountId, filters)).rejects.toThrow(
+        'Database error',
+      );
+    });
 
-     it('supports pagination', async () => {
+    it('supports pagination', async () => {
       const accountId = 1n;
-      const filters = { productId: '11', locationCode: 'MAIN', take: 10, skip: 20 };
+      const filters = {
+        productId: '11',
+        locationCode: 'MAIN',
+        take: 10,
+        skip: 20,
+      };
 
       prismaMock.inventoryBalance.findMany.mockResolvedValue([
         {
@@ -1148,8 +1375,7 @@ describe('InventoryService', () => {
           qtyAvailable: new Prisma.Decimal('80'),
         },
       ]);
-     });
-
+    });
   });
 
   describe('createReservation', () => {
@@ -1429,7 +1655,7 @@ describe('InventoryService', () => {
 
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
-  });  
+  });
 
   describe('getReservations', () => {
     it('returns reservations filtered by product and location', async () => {
@@ -1749,8 +1975,8 @@ describe('InventoryService', () => {
         inventoryBalanceServiceMock.recalculateInventoryBalanceForProduct,
       ).not.toHaveBeenCalled();
     });
-  }); 
-  
+  });
+
   describe('reserveOrderLineInventory', () => {
     it('creates a reservation for an order line', async () => {
       jest.spyOn(service, 'createReservation').mockResolvedValue({
@@ -2020,5 +2246,4 @@ describe('InventoryService', () => {
       expect(consumeReservationSpy).not.toHaveBeenCalled();
     });
   });
-
 });

@@ -38,5 +38,4 @@ describe('SalesDailyController', () => {
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
-
 });

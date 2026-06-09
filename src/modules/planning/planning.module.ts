@@ -9,27 +9,24 @@ import { ReplenishmentController } from './controllers/replenishment.controller'
 import { RecommendationsController } from './controllers/recommendations.controller';
 import { RecommendationsService } from './services/recommendations.service';
 
-
 @Module({
   imports: [PrismaModule, InventoryModule],
   controllers: [
-    SalesDailyController, 
+    SalesDailyController,
     ReplenishmentController,
-    RecommendationsController
+    RecommendationsController,
   ],
   providers: [
     PlanningSettingsService,
     SalesDailyService,
     ReplenishmentEngineService,
-    RecommendationsService
+    RecommendationsService,
   ],
   exports: [
-    PlanningSettingsService, 
+    PlanningSettingsService,
     SalesDailyService,
     ReplenishmentEngineService,
-    RecommendationsService
-  ]
+    RecommendationsService,
+  ],
 })
-
-
 export class PlanningModule {}

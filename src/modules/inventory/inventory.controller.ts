@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { InventoryService } from 'src/modules/inventory/inventory.service';
 import { OpeningBalanceDto } from 'src/modules/inventory/dto/opening-balance.dto';
@@ -18,62 +26,53 @@ export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @Post('opening-balance')
-    async postOpeningBalance(
-        @CurrentIdentity() identity: RequestIdentity,
-        @Body() openingBalanceDto: OpeningBalanceDto) {
-      return this.inventoryService.postOpeningBalance(
-        {
-          accountId: BigInt(identity.accountId),
-          openingBalanceDto
-        }
-      );
-    }
-  
+  async postOpeningBalance(
+    @CurrentIdentity() identity: RequestIdentity,
+    @Body() openingBalanceDto: OpeningBalanceDto,
+  ) {
+    return this.inventoryService.postOpeningBalance({
+      accountId: BigInt(identity.accountId),
+      openingBalanceDto,
+    });
+  }
+
   @Get('balances')
-    async getBalances(
-      @CurrentIdentity() identity: RequestIdentity,
-      @Query() filters: GetBalanceQueryDto,
-    ) {
-    return this.inventoryService.getBalances(
-        identity.accountId, 
-        filters
-      );
-    }
+  async getBalances(
+    @CurrentIdentity() identity: RequestIdentity,
+    @Query() filters: GetBalanceQueryDto,
+  ) {
+    return this.inventoryService.getBalances(identity.accountId, filters);
+  }
 
   @Get('ledger')
-    async getLedger(
-      @CurrentIdentity() identity: RequestIdentity,
-      @Query() query: GetLedgerQueryDto,
-    ) 
-    {
-      return this.inventoryService.getLedger(identity.accountId, query);   
-    }
+  async getLedger(
+    @CurrentIdentity() identity: RequestIdentity,
+    @Query() query: GetLedgerQueryDto,
+  ) {
+    return this.inventoryService.getLedger(identity.accountId, query);
+  }
 
   @Post('adjustments')
-    async postAdjustments(
-      @CurrentIdentity() identity: RequestIdentity,
-      @Body() adjustmentsDto: any
-    ) {
-      return this.inventoryService.postAdjustmentEvent(
-        {
-          accountId: BigInt(identity.accountId), 
-          adjustmentsDto
-        }
-      );
-    }
+  async postAdjustments(
+    @CurrentIdentity() identity: RequestIdentity,
+    @Body() adjustmentsDto: any,
+  ) {
+    return this.inventoryService.postAdjustmentEvent({
+      accountId: BigInt(identity.accountId),
+      adjustmentsDto,
+    });
+  }
 
   @Post('transfers')
-    async postTransfers(
-      @CurrentIdentity() identity: RequestIdentity,
-      @Body() transfersDto: any
-    ) {
-      return this.inventoryService.postTransferEvent(
-        {
-          accountId: BigInt(identity.accountId), 
-          transfersDto
-        }
-      );
-    }
+  async postTransfers(
+    @CurrentIdentity() identity: RequestIdentity,
+    @Body() transfersDto: any,
+  ) {
+    return this.inventoryService.postTransferEvent({
+      accountId: BigInt(identity.accountId),
+      transfersDto,
+    });
+  }
 
   @Post('reservations')
   async createReservation(
@@ -115,5 +114,4 @@ export class InventoryController {
       reservationId: id,
     });
   }
-
 }

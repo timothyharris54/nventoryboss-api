@@ -6,9 +6,7 @@ import { RequestIdentity } from 'src/modules/auth/interfaces/request-identity.in
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(
-    private readonly identityMapperService: IdentityMapperService,
-  ) {
+  constructor(private readonly identityMapperService: IdentityMapperService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,

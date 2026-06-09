@@ -5,14 +5,15 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 describe('OrdersController', () => {
   let controller: OrdersController;
-  const prismaMock = {};
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OrdersController],
       providers: [
-        { provide: OrdersService, useValue: prismaMock },
-        { provide: PrismaService, useValue: prismaMock },
+        { provide: OrdersService, useValue: {} },
+        { provide: PrismaService, useValue: {} },
       ],
     }).compile();
 

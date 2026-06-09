@@ -5,7 +5,12 @@ import { RequestIdentity } from '../interfaces/request-identity.interface';
 @Injectable()
 export class IdentityMapperService {
   toRequestIdentity(payload: any): RequestIdentity {
-    if (!payload?.sub || !payload?.accountId || !payload?.email || !payload?.roleCode) {
+    if (
+      !payload?.sub ||
+      !payload?.accountId ||
+      !payload?.email ||
+      !payload?.roleCode
+    ) {
       throw new UnauthorizedException('Invalid authentication payload.');
     }
 

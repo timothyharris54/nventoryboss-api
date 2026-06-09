@@ -336,11 +336,7 @@ describe('InventoryBalanceService', () => {
         qtyAvailable: new Prisma.Decimal(0),
       });
 
-      await service.recalculateInventoryBalanceForProduct(
-        1n,
-        101n,
-        'MAIN',
-      );
+      await service.recalculateInventoryBalanceForProduct(1n, 101n, 'MAIN');
 
       expect(prismaMock.purchaseOrderLine.aggregate).toHaveBeenCalledWith({
         where: {

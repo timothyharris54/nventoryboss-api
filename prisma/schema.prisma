@@ -72,11 +72,18 @@ enum ReservationSourceType {
   manual
 }
 
+enum EcommerceProvider {
+  woocommerce
+  shopify
+}
+
 enum UserRoleCode {
   executive
   purchasing_manager
   buyer
   planner
+  warehouse_manager
+  warehouse_user
   system_admin
 }
 
@@ -87,25 +94,27 @@ model Account {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
-  users                  User[]
-  products               Product[]
-  orders                 Order[]
-  orderLines             OrderLine[]
-  ledger                 InventoryLedger[]
-  balances               InventoryBalance[]
-  vendors                Vendor[]
-  vendorProducts         VendorProduct[]
-  purchaseOrders         PurchaseOrder[]
-  purchaseOrderLines     PurchaseOrderLine[]
-  receipts               Receipt[]
-  receiptLines           ReceiptLine[]
-  salesDaily             SalesDaily[]
-  inventoryReservations  InventoryReservation[]
-  replenishmentRules     ReplenishmentRule[]
-  reorderRecommendations ReorderRecommendation[]
-  planningSettings       PlanningSettings?
-  locations              Location[]
-  userRoles              UserRole[]
+  users                    User[]
+  products                 Product[]
+  orders                   Order[]
+  orderLines               OrderLine[]
+  ledger                   InventoryLedger[]
+  balances                 InventoryBalance[]
+  vendors                  Vendor[]
+  vendorProducts           VendorProduct[]
+  purchaseOrders           PurchaseOrder[]
+  purchaseOrderLines       PurchaseOrderLine[]
+  receipts                 Receipt[]
+  receiptLines             ReceiptLine[]
+  salesDaily               SalesDaily[]
+  inventoryReservations    InventoryReservation[]
+  replenishmentRules       ReplenishmentRule[]
+  reorderRecommendations   ReorderRecommendation[]
+  planningSettings         PlanningSettings?
+  locations                Location[]
+  userRoles                UserRole[]
+  ecommerceConnections     EcommerceConnection[]
+  ecommerceProductMappings EcommerceProductMapping[]
 }
 
 model User {
@@ -165,18 +174,62 @@ model Product {
   parentProduct Product?  @relation("ProductParent", fields: [parentProductId], references: [id])
   variants      Product[] @relation("ProductParent")
 
-  orderLines             OrderLine[]
-  ledgerEntries          InventoryLedger[]
-  balances               InventoryBalance[]
-  vendorProducts         VendorProduct[]
-  purchaseOrderLines     PurchaseOrderLine[]
-  receiptLines           ReceiptLine[]
-  salesDaily             SalesDaily[]
-  inventoryReservations  InventoryReservation[]
-  replenishmentRule      ReplenishmentRule?
-  reorderRecommendations ReorderRecommendation[]
+  orderLines               OrderLine[]
+  ledgerEntries            InventoryLedger[]
+  balances                 InventoryBalance[]
+  vendorProducts           VendorProduct[]
+  purchaseOrderLines       PurchaseOrderLine[]
+  receiptLines             ReceiptLine[]
+  salesDaily               SalesDaily[]
+  inventoryReservations    InventoryReservation[]
+  replenishmentRule        ReplenishmentRule?
+  reorderRecommendations   ReorderRecommendation[]
+  ecommerceProductMappings EcommerceProductMapping[]
 
   @@unique([accountId, sku])
+}
+
+model EcommerceConnection {
+  id              BigInt            @id @default(autoincrement())
+  accountId       BigInt
+  provider        EcommerceProvider
+  displayName     String
+  storeUrl        String?
+  externalStoreId String?
+  isActive        Boolean           @default(true)
+  lastSyncedAt    DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  account         Account                   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productMappings EcommerceProductMapping[]
+
+  @@unique([accountId, provider, displayName])
+  @@index([accountId, provider])
+}
+
+model EcommerceProductMapping {
+  id                BigInt            @id @default(autoincrement())
+  accountId         BigInt
+  connectionId      BigInt
+  productId         BigInt
+  provider          EcommerceProvider
+  externalProductId String
+  externalVariantId String            @default("")
+  externalSku       String?
+  externalName      String?
+  lastSyncedAt      DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  account    Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  connection EcommerceConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  product    Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, connectionId, externalProductId, externalVariantId])
+  @@index([accountId, provider, externalProductId])
+  @@index([accountId, connectionId, externalSku])
+  @@index([accountId, productId])
 }
 
 model Order {
@@ -480,7 +533,7 @@ model PlanningSettings {
   accountId BigInt @unique
 
   demandOrderStatuses        String[] // e.g. ["FULFILLED", "SHIPPED"]
-  demandDateBasis            String   @default("postedAt") // future: createdAt, fulfilledAt, shippedAt
+  demandDateBasis            String   @default("orderedAt") // future: createdAt, fulfilledAt, shippedAt, postedAt
   includeNegativeAdjustments Boolean  @default(false)
 
   createdAt DateTime @default(now())
@@ -503,26 +556,27 @@ model Location {
   @@unique([accountId, code])
   @@index([accountId, isActive])
 }
+
 model InventoryReservation {
-  id               BigInt   @id @default(autoincrement())
-  accountId        BigInt
-  productId        BigInt
-  locationCode     String
+  id           BigInt @id @default(autoincrement())
+  accountId    BigInt
+  productId    BigInt
+  locationCode String
 
-  sourceType       ReservationSourceType
-  sourceId         BigInt
+  sourceType ReservationSourceType
+  sourceId   BigInt
 
-  reservedQty      Decimal  @db.Decimal(12, 2)
-  status           ReservationStatus @default(active)
+  reservedQty Decimal           @db.Decimal(12, 2)
+  status      ReservationStatus @default(active)
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  releasedAt       DateTime?
-  consumedAt       DateTime?
-  notes            String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  releasedAt DateTime?
+  consumedAt DateTime?
+  notes      String?
 
-  account          Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([accountId, productId, locationCode, status])
   @@index([accountId, sourceType, sourceId])

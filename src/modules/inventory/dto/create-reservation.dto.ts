@@ -2,7 +2,6 @@ import { IsNotEmpty, IsString } from 'class-validator';
 import { ReservationSourceType } from '@prisma/client';
 
 export class CreateReservationDto {
-
   @IsString()
   @IsNotEmpty()
   productId?: string;
@@ -26,5 +25,4 @@ export class CreateReservationDto {
   @IsString()
   @IsNotEmpty()
   notes?: string;
-  
 }

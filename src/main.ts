@@ -31,16 +31,20 @@ function isLocalDevelopmentOrigin(origin: string): boolean {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('NVentory Boss API')
-    .setDescription('Minimal OpenAPI documentation for frontend route discovery.')
-    .setVersion('0.0.3')
+    .setDescription(
+      'Minimal OpenAPI documentation for frontend route discovery.',
+    )
+    .setVersion('0.1.1')
     .addBearerAuth()
     .build();
 

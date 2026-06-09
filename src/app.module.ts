@@ -11,19 +11,24 @@ import { ProcurementModule } from './modules/procurement/procurement.module';
 import { PlanningModule } from './modules/planning/planning.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { EcommerceModule } from './modules/ecommerce/ecommerce.module';
+import { AccountsModule } from './modules/accounts/accounts.module';
 
 @Module({
-  imports: [AuthModule,
-            UsersModule,
-            PrismaModule, 
-            ProductsModule, 
-            InventoryModule, 
-            OrdersModule, 
-            VendorsModule, 
-            VendorProductsModule,
-            ProcurementModule,
-            PlanningModule
-          ],
+  imports: [
+    AuthModule,
+    UsersModule,
+    AccountsModule,
+    PrismaModule,
+    ProductsModule,
+    InventoryModule,
+    OrdersModule,
+    VendorsModule,
+    VendorProductsModule,
+    ProcurementModule,
+    PlanningModule,
+    EcommerceModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

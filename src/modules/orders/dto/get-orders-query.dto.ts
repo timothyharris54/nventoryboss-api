@@ -1,39 +1,45 @@
+import { Type } from 'class-transformer';
 import {
+  IsEnum,
+  IsInt,
   IsISO8601,
   IsOptional,
   IsString,
-  IsInt,
+  Max,
   Min,
-  IsEnum,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-import { InventoryEventType } from '@prisma/client';
+import { OrderStatus } from '@prisma/client';
 
-export class GetLedgerQueryDto {
+export class GetOrdersQueryDto {
   @IsOptional()
   @IsString()
-  productId?: string;
+  q?: string;
 
   @IsOptional()
   @IsString()
-  locationCode?: string;
+  channel?: string;
 
   @IsOptional()
-  @IsEnum(InventoryEventType)
-  eventType?: InventoryEventType;
+  @IsEnum(OrderStatus)
+  status?: OrderStatus;
+
+  @IsOptional()
+  @IsString()
+  customerEmail?: string;
 
   @IsOptional()
   @IsISO8601()
-  fromOccurredAt?: string;
+  orderedFrom?: string;
 
   @IsOptional()
   @IsISO8601()
-  toOccurredAt?: string;
+  orderedTo?: string;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
+  @Min(1)
+  @Max(100)
   take?: number;
 
   @IsOptional()

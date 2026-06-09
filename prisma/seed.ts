@@ -22,6 +22,8 @@ const userRoles = [
   { code: 'purchasing_manager', displayName: 'Purchasing Manager' },
   { code: 'buyer', displayName: 'Buyer' },
   { code: 'planner', displayName: 'Planner' },
+  { code: 'warehouse_manager', displayName: 'Warehouse Manager' },
+  { code: 'warehouse_user', displayName: 'Warehouse User' },
   { code: 'system_admin', displayName: 'System Admin' },
 ] as const;
 const daysAgoUtc = (daysAgo: number, hour = 12, minute = 0) => {

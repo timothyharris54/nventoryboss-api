@@ -7,15 +7,14 @@ import { AppService } from './app.service';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  
-@Get()
+  @Get()
   getHello() {
     return {
       app: 'Nventory Boss',
       status: 'running',
-      version: '0.0.3',
+      version: '0.1.1',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
-      
     };
-  }}
+  }
+}
