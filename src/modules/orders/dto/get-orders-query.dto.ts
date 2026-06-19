@@ -1,6 +1,5 @@
 import { Type } from 'class-transformer';
 import {
-  IsEnum,
   IsInt,
   IsISO8601,
   IsOptional,
@@ -8,7 +7,6 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { OrderStatus } from '@prisma/client';
 
 export class GetOrdersQueryDto {
   @IsOptional()
@@ -20,8 +18,8 @@ export class GetOrdersQueryDto {
   channel?: string;
 
   @IsOptional()
-  @IsEnum(OrderStatus)
-  status?: OrderStatus;
+  @IsString()
+  status?: string;
 
   @IsOptional()
   @IsString()

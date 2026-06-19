@@ -7,7 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { GetOrdersQueryDto } from './dto/get-orders-query.dto';
 import { InventoryService } from '../inventory/inventory.service';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 type OrderInput = {
   accountId: bigint;
@@ -61,7 +61,7 @@ type SalesOrderResponse = {
   salesOrderNumber: string;
   channel: string;
   channelOrderId: string;
-  status: OrderStatus;
+  status: string;
   orderedAt: string;
   customerName: string | null;
   customerEmail: string | null;
@@ -151,7 +151,7 @@ export class OrdersService {
         accountId,
         channel: createOrderDto.channel,
         channelOrderId: createOrderDto.channelOrderId,
-        status: createOrderDto.status as OrderStatus,
+        status: createOrderDto.status,
         orderedAt: new Date(createOrderDto.orderedAt),
         customerName: createOrderDto.customerName,
         customerEmail: createOrderDto.customerEmail,

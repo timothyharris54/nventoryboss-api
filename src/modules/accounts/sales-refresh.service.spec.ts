@@ -47,11 +47,11 @@ describe('SalesRefreshService', () => {
 
     jest.clearAllMocks();
     woocommerceServiceMock.getConnections.mockReturnValue([
-      {
-        id: 'woocommerce-demo',
-        provider: 'woocommerce',
-        label: 'WooCommerce demo store',
-        storeUrl: 'https://example.test',
+        {
+          id: '10',
+          provider: 'woocommerce',
+          label: 'WooCommerce demo store',
+          storeUrl: 'https://example.test',
         configured: true,
       },
     ]);
@@ -77,8 +77,8 @@ describe('SalesRefreshService', () => {
   it('syncs active channels, posts inventory impact, and rebuilds sales daily with the default lookback', async () => {
     const result = await service.refreshForAccount(1n);
 
-    expect(woocommerceServiceMock.syncProducts).toHaveBeenCalledWith(1n);
-    expect(woocommerceServiceMock.syncOrders).toHaveBeenCalledWith(1n);
+    expect(woocommerceServiceMock.syncProducts).toHaveBeenCalledWith(1n, 10n);
+    expect(woocommerceServiceMock.syncOrders).toHaveBeenCalledWith(1n, 10n);
     expect(
       woocommerceServiceMock.postOrderInventoryImpact,
     ).toHaveBeenCalledWith(1n, 'MAIN');
@@ -117,7 +117,7 @@ describe('SalesRefreshService', () => {
   it('skips unconfigured channels', async () => {
     woocommerceServiceMock.getConnections.mockReturnValue([
       {
-        id: 'woocommerce-demo',
+        id: '10',
         provider: 'woocommerce',
         label: 'WooCommerce demo store',
         storeUrl: null,

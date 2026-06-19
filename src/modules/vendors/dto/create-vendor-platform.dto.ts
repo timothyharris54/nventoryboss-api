@@ -2,15 +2,14 @@ import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEmail,
-  IsInt,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
-  Min,
 } from 'class-validator';
 
-export class CreateVendorDto {
+export class CreateVendorPlatformDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
@@ -18,7 +17,27 @@ export class CreateVendorDto {
 
   @IsOptional()
   @IsString()
-  platformId?: string;
+  @MaxLength(2048)
+  websiteUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  loginUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  username?: string;
+
+  @IsOptional()
+  @IsObject()
+  credentials?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  paymentTerms?: string;
 
   @IsOptional()
   @IsString()
@@ -36,22 +55,11 @@ export class CreateVendorDto {
   contactPhone?: string;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  defaultLeadTimeDays?: number;
-
-  @IsOptional()
   @IsString()
-  @MaxLength(100)
-  paymentTerms?: string;
+  notes?: string;
 
   @IsOptional()
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
 }

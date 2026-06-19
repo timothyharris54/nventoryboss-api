@@ -21,7 +21,7 @@ export class SalesRefreshService {
     const locationCode = dto.locationCode || DEFAULT_LOCATION_CODE;
     const now = new Date();
     const from = this.daysAgoUtc(now, lookbackDays);
-    const activeConnections = this.getActiveConnections();
+    const activeConnections = await this.getActiveConnections(accountId);
     const channelResults: Array<{
       connection: unknown;
       products: unknown;
@@ -31,8 +31,15 @@ export class SalesRefreshService {
 
     for (const connection of activeConnections) {
       if (connection.provider === 'woocommerce') {
-        const products = await this.woocommerceService.syncProducts(accountId);
-        const orders = await this.woocommerceService.syncOrders(accountId);
+        const connectionId = BigInt(connection.id);
+        const products = await this.woocommerceService.syncProducts(
+          accountId,
+          connectionId,
+        );
+        const orders = await this.woocommerceService.syncOrders(
+          accountId,
+          connectionId,
+        );
         const inventoryImpact =
           await this.woocommerceService.postOrderInventoryImpact(
             accountId,
@@ -75,10 +82,9 @@ export class SalesRefreshService {
     };
   }
 
-  private getActiveConnections() {
-    return this.woocommerceService
-      .getConnections()
-      .filter((connection) => connection.configured);
+  private async getActiveConnections(accountId: bigint) {
+    const connections = await this.woocommerceService.getConnections(accountId);
+    return connections.filter((connection) => connection.configured);
   }
 
   private daysAgoUtc(anchor: Date, days: number): Date {

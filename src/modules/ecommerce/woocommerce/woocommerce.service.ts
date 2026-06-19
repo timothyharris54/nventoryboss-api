@@ -3,16 +3,28 @@ import {
   BadRequestException,
   Injectable,
 } from '@nestjs/common';
-import { OrderStatus, Prisma, ProductStatus } from '@prisma/client';
+import {
+  EcommerceProvider,
+  Prisma,
+  ProductStatus,
+} from '@prisma/client';
 import { PrismaService } from 'src/common/prisma/prisma.service';
 import { InventoryService } from 'src/modules/inventory/inventory.service';
 
 type WoocommerceConnection = {
-  id: 'woocommerce-demo';
+  id: string;
   provider: 'woocommerce';
   label: string;
   storeUrl: string | null;
   configured: boolean;
+  channelKey?: string;
+};
+
+type WoocommerceRuntimeConfig = {
+  connectionId: string;
+  storeUrl: string | null;
+  consumerKey: string | null;
+  consumerSecret: string | null;
 };
 
 type WoocommerceProduct = {
@@ -59,7 +71,7 @@ type SyncedProductSummary = {
 type SyncedOrderSummary = {
   woocommerceId: number;
   orderId: string;
-  status: OrderStatus;
+  status: string;
   lineCount: number;
   unmappedLineCount: number;
   action: 'created' | 'updated';
@@ -84,11 +96,7 @@ const WOOCOMMERCE_PRODUCTS_PATH = '/wp-json/wc/v3/products';
 const WOOCOMMERCE_ORDERS_PATH = '/wp-json/wc/v3/orders';
 const DEFAULT_SYNC_PAGE_SIZE = 100;
 const MAX_SYNC_PAGES = 25;
-const INVENTORY_IMPACT_ORDER_STATUSES = [
-  OrderStatus.processing,
-  OrderStatus.paid,
-  OrderStatus.completed,
-];
+const INVENTORY_IMPACT_ORDER_STATUSES = ['processing', 'paid', 'completed'];
 
 @Injectable()
 export class WoocommerceService {
@@ -97,7 +105,37 @@ export class WoocommerceService {
     private readonly inventoryService: InventoryService,
   ) {}
 
-  getConnections(): WoocommerceConnection[] {
+  async getConnections(accountId?: bigint): Promise<WoocommerceConnection[]> {
+    if (accountId) {
+      const connections = await this.prismaService.ecommerceConnection.findMany({
+        where: {
+          accountId,
+          provider: EcommerceProvider.woocommerce,
+          isActive: true,
+        },
+        orderBy: {
+          id: 'asc',
+        },
+      });
+
+      return connections.map((connection) => {
+        const credentials = this.getCredentials(connection.credentials);
+
+        return {
+          id: connection.id.toString(),
+          provider: 'woocommerce',
+          label: connection.displayName,
+          storeUrl: connection.storeUrl,
+          configured: Boolean(
+            connection.storeUrl &&
+              credentials.consumerKey &&
+              credentials.consumerSecret,
+          ),
+          channelKey: connection.channelKey,
+        };
+      });
+    }
+
     const config = this.getConfig({ requireCredentials: false });
 
     return [
@@ -113,19 +151,23 @@ export class WoocommerceService {
     ];
   }
 
-  async testConnection() {
-    const products = await this.fetchProducts({ perPage: 1 });
+  async testConnection(accountId?: bigint, connectionId?: bigint) {
+    const config = accountId
+      ? await this.getConfigForAccount(accountId, connectionId)
+      : this.getConfig({ requireCredentials: true });
+    const products = await this.fetchProducts({ perPage: 1 }, config);
 
     return {
-      connectionId: WOOCOMMERCE_CONNECTION_ID,
+      connectionId: config.connectionId,
       ok: true,
-      productsEndpoint: this.getProductsEndpointForDisplay(),
+      productsEndpoint: this.getProductsEndpointForDisplay(config),
       sampleCount: products.length,
     };
   }
 
-  async syncProducts(accountId: bigint) {
-    const products = await this.fetchAllProducts();
+  async syncProducts(accountId: bigint, connectionId?: bigint) {
+    const config = await this.getConfigForAccount(accountId, connectionId);
+    const products = await this.fetchAllProducts(config);
     const synced: SyncedProductSummary[] = [];
     const skipped: Array<{ woocommerceId: number; reason: string }> = [];
 
@@ -179,7 +221,7 @@ export class WoocommerceService {
     }
 
     return {
-      connectionId: WOOCOMMERCE_CONNECTION_ID,
+      connectionId: config.connectionId,
       fetched: products.length,
       synced: synced.length,
       skipped: skipped.length,
@@ -188,8 +230,9 @@ export class WoocommerceService {
     };
   }
 
-  async syncOrders(accountId: bigint) {
-    const orders = await this.fetchAllOrders();
+  async syncOrders(accountId: bigint, connectionId?: bigint) {
+    const config = await this.getConfigForAccount(accountId, connectionId);
+    const orders = await this.fetchAllOrders(config);
     const synced: SyncedOrderSummary[] = [];
     const skipped: Array<{ woocommerceId: number; reason: string }> = [];
 
@@ -328,7 +371,7 @@ export class WoocommerceService {
     }
 
     return {
-      connectionId: WOOCOMMERCE_CONNECTION_ID,
+      connectionId: config.connectionId,
       fetched: orders.length,
       synced: synced.length,
       skipped: skipped.length,
@@ -413,14 +456,19 @@ export class WoocommerceService {
     };
   }
 
-  private async fetchAllProducts(): Promise<WoocommerceProduct[]> {
+  private async fetchAllProducts(
+    config: WoocommerceRuntimeConfig,
+  ): Promise<WoocommerceProduct[]> {
     const allProducts: WoocommerceProduct[] = [];
 
     for (let page = 1; page <= MAX_SYNC_PAGES; page += 1) {
-      const products = await this.fetchProducts({
-        perPage: DEFAULT_SYNC_PAGE_SIZE,
-        page,
-      });
+      const products = await this.fetchProducts(
+        {
+          perPage: DEFAULT_SYNC_PAGE_SIZE,
+          page,
+        },
+        config,
+      );
 
       allProducts.push(...products);
 
@@ -432,14 +480,19 @@ export class WoocommerceService {
     return allProducts;
   }
 
-  private async fetchAllOrders(): Promise<WoocommerceOrder[]> {
+  private async fetchAllOrders(
+    config: WoocommerceRuntimeConfig,
+  ): Promise<WoocommerceOrder[]> {
     const allOrders: WoocommerceOrder[] = [];
 
     for (let page = 1; page <= MAX_SYNC_PAGES; page += 1) {
-      const orders = await this.fetchOrders({
-        perPage: DEFAULT_SYNC_PAGE_SIZE,
-        page,
-      });
+      const orders = await this.fetchOrders(
+        {
+          perPage: DEFAULT_SYNC_PAGE_SIZE,
+          page,
+        },
+        config,
+      );
 
       allOrders.push(...orders);
 
@@ -453,8 +506,8 @@ export class WoocommerceService {
 
   private async fetchProducts(
     options: WoocommerceRequestOptions,
+    config: WoocommerceRuntimeConfig,
   ): Promise<WoocommerceProduct[]> {
-    const config = this.getConfig({ requireCredentials: true });
     const url = this.buildProductsUrl(config.storeUrl, options);
     let response: Response;
 
@@ -496,8 +549,8 @@ export class WoocommerceService {
 
   private async fetchOrders(
     options: WoocommerceRequestOptions,
+    config: WoocommerceRuntimeConfig,
   ): Promise<WoocommerceOrder[]> {
-    const config = this.getConfig({ requireCredentials: true });
     const url = this.buildWoocommerceUrl(
       config.storeUrl,
       WOOCOMMERCE_ORDERS_PATH,
@@ -558,9 +611,50 @@ export class WoocommerceService {
     }
 
     return {
+      connectionId: WOOCOMMERCE_CONNECTION_ID,
       storeUrl,
       consumerKey,
       consumerSecret,
+    };
+  }
+
+  private async getConfigForAccount(
+    accountId: bigint,
+    connectionId?: bigint,
+  ): Promise<WoocommerceRuntimeConfig> {
+    const connection = await this.prismaService.ecommerceConnection.findFirst({
+      where: {
+        accountId,
+        provider: EcommerceProvider.woocommerce,
+        isActive: true,
+        ...(connectionId ? { id: connectionId } : {}),
+      },
+      orderBy: {
+        id: 'asc',
+      },
+    });
+
+    if (!connection) {
+      throw new BadRequestException('No active WooCommerce connection is configured');
+    }
+
+    const credentials = this.getCredentials(connection.credentials);
+
+    if (
+      !connection.storeUrl ||
+      !credentials.consumerKey ||
+      !credentials.consumerSecret
+    ) {
+      throw new BadRequestException(
+        'WooCommerce store URL, consumer key, and consumer secret must be configured',
+      );
+    }
+
+    return {
+      connectionId: connection.id.toString(),
+      storeUrl: connection.storeUrl,
+      consumerKey: credentials.consumerKey,
+      consumerSecret: credentials.consumerSecret,
     };
   }
 
@@ -599,13 +693,43 @@ export class WoocommerceService {
     return url.toString();
   }
 
-  private getProductsEndpointForDisplay(): string {
-    const config = this.getConfig({ requireCredentials: true });
+  private getProductsEndpointForDisplay(
+    config: WoocommerceRuntimeConfig,
+  ): string {
     const url = new URL(
       WOOCOMMERCE_PRODUCTS_PATH,
       this.normalizeStoreUrl(config.storeUrl!),
     );
     return url.toString();
+  }
+
+  private getCredentials(credentials: Prisma.JsonValue): {
+    consumerKey: string | null;
+    consumerSecret: string | null;
+  } {
+    if (
+      !credentials ||
+      Array.isArray(credentials) ||
+      typeof credentials !== 'object'
+    ) {
+      return {
+        consumerKey: null,
+        consumerSecret: null,
+      };
+    }
+
+    return {
+      consumerKey: this.getCredentialString(credentials, 'consumerKey'),
+      consumerSecret: this.getCredentialString(credentials, 'consumerSecret'),
+    };
+  }
+
+  private getCredentialString(
+    credentials: Record<string, unknown>,
+    key: string,
+  ): string | null {
+    const value = credentials[key];
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
   }
 
   private normalizeStoreUrl(storeUrl: string): string {
@@ -637,23 +761,23 @@ export class WoocommerceService {
     return ProductStatus.inactive;
   }
 
-  private mapOrderStatus(status?: string | null): OrderStatus {
+  private mapOrderStatus(status?: string | null): string {
     switch (status) {
       case 'pending':
-        return OrderStatus.pending;
+        return 'pending';
       case 'on-hold':
-        return OrderStatus.on_hold;
+        return 'on_hold';
       case 'processing':
-        return OrderStatus.processing;
+        return 'processing';
       case 'completed':
-        return OrderStatus.completed;
+        return 'completed';
       case 'cancelled':
       case 'failed':
-        return OrderStatus.cancelled;
+        return 'cancelled';
       case 'refunded':
-        return OrderStatus.refunded;
+        return 'refunded';
       default:
-        return OrderStatus.pending;
+        return 'pending';
     }
   }
 

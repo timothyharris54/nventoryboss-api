@@ -194,9 +194,7 @@ export class SalesDailyService {
     toExclusive: Date,
     demandStatuses: string[],
   ): Prisma.Sql {
-    const statusEnumValues = demandStatuses.map(
-      (status) => Prisma.sql`${status}::"OrderStatus"`,
-    );
+    const statusSqlValues = demandStatuses.map((status) => Prisma.sql`${status}`);
 
     // Note: The SQL uses COALESCE to handle cases where lineTotal or unitPrice might be null.
     return Prisma.sql`
@@ -230,7 +228,7 @@ export class SalesDailyService {
       WHERE o."accountId" = ${accountId}
         AND o."orderedAt" >= ${from}
         AND o."orderedAt" < ${toExclusive}
-        AND o."status" IN (${Prisma.join(statusEnumValues)})
+        AND o."status" IN (${Prisma.join(statusSqlValues)})
         AND ol."productId" IS NOT NULL
       GROUP BY
         o."accountId",
@@ -247,9 +245,7 @@ export class SalesDailyService {
     toExclusive: Date,
     demandStatuses: string[],
   ): Prisma.Sql {
-    const statusEnumValues = demandStatuses.map(
-      (status) => Prisma.sql`${status}::"OrderStatus"`,
-    );
+    const statusSqlValues = demandStatuses.map((status) => Prisma.sql`${status}`);
 
     return Prisma.sql`
       INSERT INTO "SalesDaily" (
@@ -283,7 +279,7 @@ export class SalesDailyService {
         AND ol."productId" = ${productId}
         AND o."orderedAt" >= ${from}
         AND o."orderedAt" < ${toExclusive}
-        AND o."status" IN (${Prisma.join(statusEnumValues)})
+        AND o."status" IN (${Prisma.join(statusSqlValues)})
         AND ol."productId" IS NOT NULL
       GROUP BY
         o."accountId",

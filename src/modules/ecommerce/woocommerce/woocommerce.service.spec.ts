@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrderStatus, ProductStatus } from '@prisma/client';
+import { ProductStatus } from '@prisma/client';
 import { PrismaService } from 'src/common/prisma/prisma.service';
 import { InventoryService } from 'src/modules/inventory/inventory.service';
 import { WoocommerceService } from './woocommerce.service';
@@ -16,6 +16,10 @@ describe('WoocommerceService', () => {
     order: {
       findMany: jest.Mock;
       findUnique: jest.Mock;
+    };
+    ecommerceConnection: {
+      findMany: jest.Mock;
+      findFirst: jest.Mock;
     };
     $transaction: jest.Mock;
   };
@@ -42,9 +46,13 @@ describe('WoocommerceService', () => {
         findUnique: jest.fn(),
         upsert: jest.fn(),
       },
-      order: {
+    order: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+    },
+      ecommerceConnection: {
         findMany: jest.fn(),
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
       },
       $transaction: jest.fn(),
     };
@@ -93,14 +101,40 @@ describe('WoocommerceService', () => {
     jest.restoreAllMocks();
   });
 
-  it('returns configured WooCommerce connection metadata without credentials', () => {
-    expect(service.getConnections()).toEqual([
+  it('returns configured WooCommerce connection metadata without credentials', async () => {
+    await expect(service.getConnections()).resolves.toEqual([
       {
         id: 'woocommerce-demo',
         provider: 'woocommerce',
         label: 'WooCommerce demo store',
         storeUrl: 'https://dexsdoghouse.com',
         configured: true,
+      },
+    ]);
+  });
+
+  it('returns account WooCommerce connection metadata without credential values', async () => {
+    prismaMock.ecommerceConnection.findMany.mockResolvedValue([
+      {
+        id: 10n,
+        displayName: 'Main Store',
+        channelKey: 'woocommerce-main',
+        storeUrl: 'https://dexsdoghouse.com',
+        credentials: {
+          consumerKey: 'ck_test',
+          consumerSecret: 'cs_test',
+        },
+      },
+    ]);
+
+    await expect(service.getConnections(1n)).resolves.toEqual([
+      {
+        id: '10',
+        provider: 'woocommerce',
+        label: 'Main Store',
+        storeUrl: 'https://dexsdoghouse.com',
+        configured: true,
+        channelKey: 'woocommerce-main',
       },
     ]);
   });
@@ -157,6 +191,14 @@ describe('WoocommerceService', () => {
         json: jest.fn().mockResolvedValue([]),
       });
     global.fetch = fetchMock as unknown as typeof fetch;
+    prismaMock.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 10n,
+      storeUrl: 'https://dexsdoghouse.com',
+      credentials: {
+        consumerKey: 'ck_test',
+        consumerSecret: 'cs_test',
+      },
+    });
     prismaMock.product.findUnique.mockResolvedValue(null);
     prismaMock.product.upsert.mockResolvedValue({
       id: 123n,
@@ -165,7 +207,7 @@ describe('WoocommerceService', () => {
     });
 
     await expect(service.syncProducts(1n)).resolves.toEqual({
-      connectionId: 'woocommerce-demo',
+      connectionId: '10',
       fetched: 2,
       synced: 1,
       skipped: 1,
@@ -243,25 +285,33 @@ describe('WoocommerceService', () => {
         json: jest.fn().mockResolvedValue([]),
       });
     global.fetch = fetchMock as unknown as typeof fetch;
+    prismaMock.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 10n,
+      storeUrl: 'https://dexsdoghouse.com',
+      credentials: {
+        consumerKey: 'ck_test',
+        consumerSecret: 'cs_test',
+      },
+    });
     prismaMock.order.findUnique.mockResolvedValue(null);
     prismaMock.product.findMany.mockResolvedValue([{ id: 123n, sku: 'DOG-1' }]);
     txMock.order.upsert.mockResolvedValue({ id: 7001n });
     txMock.order.findUniqueOrThrow.mockResolvedValue({
       id: 7001n,
-      status: OrderStatus.processing,
+      status: 'processing',
       orderLines: [{ productId: 123n }, { productId: null }],
     });
 
     await expect(service.syncOrders(1n)).resolves.toEqual({
-      connectionId: 'woocommerce-demo',
+      connectionId: '10',
       fetched: 1,
       synced: 1,
       skipped: 0,
-      items: [
+        items: [
         {
           woocommerceId: 9001,
           orderId: '7001',
-          status: OrderStatus.processing,
+          status: 'processing',
           lineCount: 2,
           unmappedLineCount: 1,
           action: 'created',
@@ -302,11 +352,11 @@ describe('WoocommerceService', () => {
           channelOrderId: '9001',
         },
       },
-      create: {
+        create: {
         accountId: 1n,
         channel: 'woocommerce',
         channelOrderId: '9001',
-        status: OrderStatus.processing,
+        status: 'processing',
         orderedAt: new Date('2026-05-30T14:15:00Z'),
         customerName: 'Dex Doghouse',
         customerEmail: 'dex@example.com',
@@ -314,7 +364,7 @@ describe('WoocommerceService', () => {
         orderTotal: expect.anything(),
       },
       update: {
-        status: OrderStatus.processing,
+        status: 'processing',
         orderedAt: new Date('2026-05-30T14:15:00Z'),
         customerName: 'Dex Doghouse',
         customerEmail: 'dex@example.com',
@@ -362,9 +412,17 @@ describe('WoocommerceService', () => {
         json: jest.fn().mockResolvedValue([]),
       });
     global.fetch = fetchMock as unknown as typeof fetch;
+    prismaMock.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 10n,
+      storeUrl: 'https://dexsdoghouse.com',
+      credentials: {
+        consumerKey: 'ck_test',
+        consumerSecret: 'cs_test',
+      },
+    });
 
     await expect(service.syncOrders(1n)).resolves.toEqual({
-      connectionId: 'woocommerce-demo',
+      connectionId: '10',
       fetched: 1,
       synced: 0,
       skipped: 1,
@@ -442,7 +500,7 @@ describe('WoocommerceService', () => {
         accountId: 1n,
         channel: 'woocommerce',
         status: {
-          in: [OrderStatus.processing, OrderStatus.paid, OrderStatus.completed],
+          in: ['processing', 'paid', 'completed'],
         },
       },
       include: {

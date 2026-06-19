@@ -77,6 +77,13 @@ enum EcommerceProvider {
   shopify
 }
 
+enum EcommerceAuthType {
+  none
+  basic
+  api_key
+  oauth
+}
+
 enum UserRoleCode {
   executive
   purchasing_manager
@@ -101,6 +108,7 @@ model Account {
   ledger                   InventoryLedger[]
   balances                 InventoryBalance[]
   vendors                  Vendor[]
+  vendorPlatforms          VendorPlatform[]
   vendorProducts           VendorProduct[]
   purchaseOrders           PurchaseOrder[]
   purchaseOrderLines       PurchaseOrderLine[]
@@ -115,6 +123,7 @@ model Account {
   userRoles                UserRole[]
   ecommerceConnections     EcommerceConnection[]
   ecommerceProductMappings EcommerceProductMapping[]
+  lookupValues             LookupValue[]
 }
 
 model User {
@@ -190,22 +199,33 @@ model Product {
 }
 
 model EcommerceConnection {
-  id              BigInt            @id @default(autoincrement())
-  accountId       BigInt
-  provider        EcommerceProvider
-  displayName     String
-  storeUrl        String?
-  externalStoreId String?
-  isActive        Boolean           @default(true)
-  lastSyncedAt    DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id                     BigInt            @id @default(autoincrement())
+  accountId              BigInt
+  provider               EcommerceProvider
+  channelKey             String
+  displayName            String
+  storeUrl               String?
+  externalStoreId        String?
+  authType               EcommerceAuthType @default(api_key)
+  credentials            Json?
+  settings               Json?
+  defaultLocationCode    String            @default("MAIN")
+  currencyCode           String?
+  isActive               Boolean           @default(true)
+  lastSyncedAt           DateTime?
+  lastConnectionTestedAt DateTime?
+  lastConnectionStatus   String?
+  lastConnectionError    String?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
 
   account         Account                   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   productMappings EcommerceProductMapping[]
 
+  @@unique([accountId, channelKey])
   @@unique([accountId, provider, displayName])
   @@index([accountId, provider])
+  @@index([accountId, isActive])
 }
 
 model EcommerceProductMapping {
@@ -237,7 +257,7 @@ model Order {
   accountId      BigInt
   channel        String
   channelOrderId String
-  status         OrderStatus
+  status         String
   orderedAt      DateTime
   customerName   String?
   customerEmail  String?
@@ -250,6 +270,25 @@ model Order {
   orderLines OrderLine[]
 
   @@unique([accountId, channel, channelOrderId])
+}
+
+model LookupValue {
+  id                 BigInt   @id @default(autoincrement())
+  accountId          BigInt
+  lookupType         String
+  channelKey         String?
+  lookupKeyValue     String
+  lookupTextValue    String
+  lookupDescription  String?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, lookupType, channelKey, lookupKeyValue])
+  @@index([accountId, lookupType])
+  @@index([accountId, lookupType, channelKey])
 }
 
 model OrderLine {
@@ -319,6 +358,7 @@ enum PurchaseOrderStatus {
 model Vendor {
   id                  BigInt   @id @default(autoincrement())
   accountId           BigInt
+  platformId          BigInt?
   name                String
   contactName         String?
   contactEmail        String?
@@ -332,11 +372,37 @@ model Vendor {
   updatedAt           DateTime @updatedAt
 
   account                Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  platform               VendorPlatform?         @relation(fields: [platformId], references: [id], onDelete: SetNull)
   vendorProducts         VendorProduct[]
   purchaseOrders         PurchaseOrder[]
   reorderRecommendations ReorderRecommendation[]
 
   @@unique([accountId, name])
+  @@index([accountId, platformId])
+}
+
+model VendorPlatform {
+  id             BigInt   @id @default(autoincrement())
+  accountId      BigInt
+  name           String
+  websiteUrl     String?
+  loginUrl       String?
+  username       String?
+  credentials    Json?
+  paymentTerms   String?
+  contactName    String?
+  contactEmail   String?
+  contactPhone   String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  account Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  vendors Vendor[]
+
+  @@unique([accountId, name])
+  @@index([accountId, isActive])
 }
 
 model VendorProduct {

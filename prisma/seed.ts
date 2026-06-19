@@ -107,6 +107,96 @@ async function main() {
     },
   });
 
+  // Seed default order status lookup values (account-scoped). These are
+  // canonical status values used by the application and can be overridden
+  // or extended per channel by adding rows with a non-null `channelKey`.
+  await prisma.lookupValue.createMany({
+    data: [
+      {
+        accountId: account.id,
+        lookupType: 'OrderStatus',
+        channelKey: null,
+        lookupKeyValue: 'pending',
+        lookupTextValue: 'Pending',
+        lookupDescription: 'Order is pending',
+        isActive: true,
+      },
+      {
+        accountId: account.id,
+        lookupType: 'OrderStatus',
+        channelKey: null,
+        lookupKeyValue: 'authorized',
+        lookupTextValue: 'Authorized',
+        lookupDescription: 'Payment authorized',
+        isActive: true,
+      },
+      {
+        accountId: account.id,
+        lookupType: 'OrderStatus',
+        channelKey: null,
+        lookupKeyValue: 'paid',
+        lookupTextValue: 'Paid',
+        lookupDescription: 'Order is paid',
+        isActive: true,
+      },
+      {
+        accountId: account.id,
+        lookupType: 'OrderStatus',
+        channelKey: null,
+        lookupKeyValue: 'processing',
+        lookupTextValue: 'Processing',
+        lookupDescription: 'Order is being processed',
+        isActive: true,
+      },
+      {
+        accountId: account.id,
+        lookupType: 'OrderStatus',
+        channelKey: null,
+        lookupKeyValue: 'completed',
+        lookupTextValue: 'Completed',
+        lookupDescription: 'Order fulfilled/completed',
+        isActive: true,
+      },
+      {
+        accountId: account.id,
+        lookupType: 'OrderStatus',
+        channelKey: null,
+        lookupKeyValue: 'cancelled',
+        lookupTextValue: 'Cancelled',
+        lookupDescription: 'Order cancelled',
+        isActive: true,
+      },
+      {
+        accountId: account.id,
+        lookupType: 'OrderStatus',
+        channelKey: null,
+        lookupKeyValue: 'refunded',
+        lookupTextValue: 'Refunded',
+        lookupDescription: 'Order refunded',
+        isActive: true,
+      },
+      {
+        accountId: account.id,
+        lookupType: 'OrderStatus',
+        channelKey: null,
+        lookupKeyValue: 'partially_refunded',
+        lookupTextValue: 'Partially Refunded',
+        lookupDescription: 'Order partially refunded',
+        isActive: true,
+      },
+      {
+        accountId: account.id,
+        lookupType: 'OrderStatus',
+        channelKey: null,
+        lookupKeyValue: 'on_hold',
+        lookupTextValue: 'On Hold',
+        lookupDescription: 'Order on hold',
+        isActive: true,
+      },
+    ],
+    skipDuplicates: true,
+  });
+
   const products = await Promise.all([
     prisma.product.create({
       data: {
