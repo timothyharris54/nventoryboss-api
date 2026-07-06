@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { randomBytes, scrypt } from 'node:crypto';
 import { Pool } from 'pg';
 import 'dotenv/config';
 
@@ -17,6 +18,31 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const dec = (value: string | number) => new Prisma.Decimal(value);
+const hashPassword = async (password: string) => {
+  const salt = randomBytes(16).toString('base64url');
+  const key = await new Promise<Buffer>((resolve, reject) => {
+    scrypt(
+      password,
+      salt,
+      64,
+      {
+        N: 16384,
+        r: 8,
+        p: 1,
+      },
+      (error, derivedKey) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(derivedKey);
+      },
+    );
+  });
+
+  return ['scrypt', 16384, 8, 1, salt, key.toString('base64url')].join('$');
+};
 const userRoles = [
   { code: 'executive', displayName: 'Executive' },
   { code: 'purchasing_manager', displayName: 'Purchasing Manager' },
@@ -87,6 +113,8 @@ async function main() {
       accountId: account.id,
       email: 'timothy.harris54@gmail.com',
       fullName: 'Timothy Harris',
+      passwordHash: await hashPassword('ChangeMe123!'),
+      passwordChangedAt: new Date(),
     },
   });
 

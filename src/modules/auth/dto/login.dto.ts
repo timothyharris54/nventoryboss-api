@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
@@ -13,9 +14,15 @@ export class LoginDto {
 
   @IsString()
   @MinLength(1)
+  @MaxLength(128)
   password!: string;
 
   @IsOptional()
   @IsEnum(UserRoleCode)
   roleCode?: UserRoleCode;
+}
+
+export class SwitchRoleDto {
+  @IsEnum(UserRoleCode)
+  roleCode!: UserRoleCode;
 }

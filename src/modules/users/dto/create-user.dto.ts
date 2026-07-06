@@ -9,7 +9,23 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  ValidationArguments,
 } from 'class-validator';
+
+@ValidatorConstraint({ name: 'MutuallyExclusivePasswords', async: false })
+class MutuallyExclusivePasswords implements ValidatorConstraintInterface {
+  validate(_value: any, args: ValidationArguments) {
+    const obj = args.object as any;
+    return !(obj.password && obj.temporaryPassword);
+  }
+
+  defaultMessage() {
+    return 'Only one of password or temporaryPassword may be provided.';
+  }
+}
 
 export class CreateUserDto {
   @IsEmail()
@@ -24,6 +40,18 @@ export class CreateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  @Validate(MutuallyExclusivePasswords)
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  @Validate(MutuallyExclusivePasswords)
+  temporaryPassword?: string;
 
   @IsArray()
   @ArrayMinSize(1)

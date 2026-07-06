@@ -27,6 +27,11 @@ export class UpdateUserDto {
   isActive?: boolean;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  password?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @IsEnum(UserRoleCode, { each: true })

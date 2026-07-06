@@ -1,6 +1,6 @@
 {
   "name": "nventoryboss-api",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "description": "NventoryBoss API built with NestJS and Prisma",
   "author": "",
   "private": true,
@@ -35,6 +35,7 @@
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.14.0",
     "rxjs": "^7.8.1",
     "swagger-ui-express": "^5.0.1"
   },

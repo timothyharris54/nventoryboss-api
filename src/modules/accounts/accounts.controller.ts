@@ -1,4 +1,11 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentIdentity } from 'src/modules/auth/decorators/current-identity.decorator';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
@@ -14,6 +21,7 @@ export class AccountsController {
   constructor(private readonly salesRefreshService: SalesRefreshService) {}
 
   @Post('sales-refresh')
+  @HttpCode(HttpStatus.OK)
   refreshSales(
     @CurrentIdentity() identity: RequestIdentity,
     @Body() dto: SalesRefreshDto,

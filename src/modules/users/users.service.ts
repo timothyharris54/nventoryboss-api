@@ -6,12 +6,18 @@ import {
 } from '@nestjs/common';
 import { UserRoleCode } from '@prisma/client';
 import { PrismaService } from 'src/common/prisma/prisma.service';
+import { AuthPasswordService } from 'src/modules/auth/services/auth-password.service';
+import { PasswordPolicyService } from 'src/modules/auth/services/password-policy.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authPasswordService: AuthPasswordService,
+    private readonly passwordPolicyService: PasswordPolicyService,
+  ) {}
 
   async findAll(accountId: bigint) {
     const users = await this.prisma.user.findMany({
@@ -45,7 +51,24 @@ export class UsersService {
   async create(accountId: bigint, dto: CreateUserDto) {
     await this.assertEmailAvailable(accountId, dto.email);
 
+    if (dto.password !== undefined && dto.temporaryPassword !== undefined) {
+      throw new BadRequestException(
+        'Only one of `password` or `temporaryPassword` may be provided.',
+      );
+    }
+
     const roles = await this.resolveRoles(dto.roleCodes);
+    const passwordValue = dto.password ?? dto.temporaryPassword;
+    if (passwordValue !== undefined) {
+      await this.passwordPolicyService.assertPasswordMeetsAccountPolicy(
+        accountId,
+        passwordValue,
+      );
+    }
+
+    const passwordHash = passwordValue !== undefined
+      ? await this.authPasswordService.hashPassword(passwordValue)
+      : undefined;
 
     const user = await this.prisma.$transaction(async (tx) => {
       const createdUser = await tx.user.create({
@@ -53,6 +76,8 @@ export class UsersService {
           accountId,
           email: dto.email,
           fullName: dto.fullName,
+          passwordHash,
+          passwordChangedAt: passwordHash ? new Date() : undefined,
           isActive: dto.isActive ?? true,
         },
       });
@@ -107,6 +132,16 @@ export class UsersService {
     }
 
     const roles = dto.roleCodes ? await this.resolveRoles(dto.roleCodes) : null;
+    if (dto.password !== undefined) {
+      await this.passwordPolicyService.assertPasswordMeetsAccountPolicy(
+        accountId,
+        dto.password,
+      );
+    }
+
+    const passwordHash = dto.password !== undefined
+      ? await this.authPasswordService.hashPassword(dto.password)
+      : undefined;
     const nextRoleCodes =
       roles?.map((role) => role.code) ??
       existingUser.userRoles.map((userRole) => userRole.role.code);
@@ -127,6 +162,11 @@ export class UsersService {
         data: {
           email: dto.email,
           fullName: dto.fullName,
+          passwordHash,
+          passwordChangedAt: passwordHash ? new Date() : undefined,
+          passwordResetTokenHash: passwordHash ? null : undefined,
+          passwordResetTokenExpiresAt: passwordHash ? null : undefined,
+          passwordResetRequestedAt: passwordHash ? null : undefined,
           isActive: dto.isActive,
         },
       });

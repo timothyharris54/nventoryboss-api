@@ -124,21 +124,28 @@ model Account {
   ecommerceConnections     EcommerceConnection[]
   ecommerceProductMappings EcommerceProductMapping[]
   lookupValues             LookupValue[]
+  securitySettings         AccountSecuritySettings?
 }
 
 model User {
-  id        BigInt   @id @default(autoincrement())
-  accountId BigInt
-  email     String
-  fullName  String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                         BigInt    @id @default(autoincrement())
+  accountId                  BigInt
+  email                      String
+  fullName                   String?
+  passwordHash               String?
+  passwordChangedAt          DateTime?
+  passwordResetTokenHash     String?
+  passwordResetTokenExpiresAt DateTime?
+  passwordResetRequestedAt   DateTime?
+  isActive                   Boolean   @default(true)
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
   account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
   userRoles UserRole[]
 
   @@unique([accountId, email])
+  @@index([passwordResetTokenHash])
 }
 
 model Role {
@@ -601,6 +608,18 @@ model PlanningSettings {
   demandOrderStatuses        String[] // e.g. ["FULFILLED", "SHIPPED"]
   demandDateBasis            String   @default("orderedAt") // future: createdAt, fulfilledAt, shippedAt, postedAt
   includeNegativeAdjustments Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model AccountSecuritySettings {
+  id        Int    @id @default(autoincrement())
+  accountId BigInt @unique
+
+  passwordMinLength Int @default(12)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
