@@ -1,6 +1,6 @@
 {
   "name": "nventoryboss-api",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "NventoryBoss API built with NestJS and Prisma",
   "author": "",
   "private": true,

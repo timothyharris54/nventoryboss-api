@@ -243,6 +243,55 @@ describe('WoocommerceService', () => {
     });
   });
 
+  it('stores the WooCommerce default image URL when syncing products', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue([
+          {
+            id: 20,
+            sku: 'DOG-2',
+            name: 'Leash',
+            status: 'publish',
+            image: { src: 'https://example.com/leash.jpg' },
+          },
+        ]),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue([]),
+      });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    prismaMock.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 10n,
+      storeUrl: 'https://dexsdoghouse.com',
+      credentials: {
+        consumerKey: 'ck_test',
+        consumerSecret: 'cs_test',
+      },
+    });
+    prismaMock.product.findUnique.mockResolvedValue(null);
+    prismaMock.product.upsert.mockResolvedValue({
+      id: 456n,
+      sku: 'DOG-2',
+      name: 'Leash',
+    });
+
+    await expect(service.syncProducts(1n)).resolves.toBeDefined();
+
+    expect(prismaMock.product.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          imageUrl: 'https://example.com/leash.jpg',
+        }),
+        update: expect.objectContaining({
+          imageUrl: 'https://example.com/leash.jpg',
+        }),
+      }),
+    );
+  });
+
   it('syncs WooCommerce orders into local orders and lines', async () => {
     const fetchMock = jest
       .fn()

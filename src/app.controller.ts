@@ -10,9 +10,9 @@ export class AppController {
   @Get()
   getHello() {
     return {
-      app: 'Nventory Boss',
+      app: 'NVentory Boss',
       status: 'running',
-      version: '0.1.4',
+      version: '0.1.5',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     };

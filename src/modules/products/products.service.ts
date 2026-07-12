@@ -16,13 +16,12 @@ export class ProductsService {
     const accountId = BigInt(input.accountId);
     const createProductDto = input.createProductDto;
 
-    console.log('Creating product:', createProductDto);
-
     return this.prismaService.product.create({
       data: {
         accountId,
         sku: createProductDto.sku,
         name: createProductDto.name,
+        imageUrl: createProductDto.imageUrl ?? null,
       },
     });
   }
@@ -32,7 +31,7 @@ export class ProductsService {
     const skip = query.skip ?? 0;
     const search = query.q?.trim();
 
-    return this.prismaService.product.findMany({
+    const products = await this.prismaService.product.findMany({
       where: {
         accountId,
         ...(search
@@ -58,6 +57,8 @@ export class ProductsService {
       take,
       skip,
     });
+
+    return products.map((product) => this.formatProductSummary(product));
   }
 
   async search(accountId: bigint, query: GetProductsQueryDto = {}) {
@@ -99,7 +100,7 @@ export class ProductsService {
     ]);
 
     return {
-      items,
+      items: items.map((product) => this.formatProductSummary(product)),
       total,
       take,
       skip,
@@ -114,5 +115,56 @@ export class ProductsService {
       },
       orderBy: { id: 'asc' },
     });
+  }
+
+  async update(accountId: bigint, id: bigint, dto: Partial<CreateProductDto>) {
+    await this.prismaService.product.updateMany({
+      where: {
+        accountId,
+        id,
+      },
+      data: {
+        ...(dto.sku ? { sku: dto.sku } : {}),
+        ...(dto.name ? { name: dto.name } : {}),
+        ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl ?? null } : {}),
+      },
+    });
+
+    return this.prismaService.product.findFirst({
+      where: {
+        accountId,
+        id,
+      },
+    });
+  }
+
+  renderProductDetailView(product: { id?: bigint | number | null; name?: string | null; sku?: string | null; imageUrl?: string | null } | null) {
+    if (!product) {
+      return {
+        found: false,
+        product: null,
+      };
+    }
+
+    return {
+      found: true,
+      product: this.formatProductSummary(product),
+    };
+  }
+
+  private formatProductSummary(product: { id?: bigint | number | null; name?: string | null; sku?: string | null; imageUrl?: string | null }) {
+    return {
+      id: product.id?.toString?.() ?? product.id,
+      name: product.name ?? null,
+      sku: product.sku ?? null,
+      imageUrl: product.imageUrl ?? null,
+      thumbnail: product.imageUrl
+        ? {
+            url: product.imageUrl,
+            width: 220,
+            height: 220,
+          }
+        : null,
+    };
   }
 }

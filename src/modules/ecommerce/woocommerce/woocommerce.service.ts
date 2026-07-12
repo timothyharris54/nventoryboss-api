@@ -32,6 +32,8 @@ type WoocommerceProduct = {
   sku?: string | null;
   name?: string | null;
   status?: string | null;
+  images?: Array<{ src?: string | null }> | null;
+  image?: { src?: string | null } | null;
 };
 
 type WoocommerceOrder = {
@@ -151,6 +153,16 @@ export class WoocommerceService {
     ];
   }
 
+  private extractImageUrl(product: WoocommerceProduct): string | null {
+    const directImage = product.image?.src?.trim();
+    if (directImage) {
+      return directImage;
+    }
+
+    const firstImage = product.images?.find((image) => image.src?.trim())?.src?.trim();
+    return firstImage ?? null;
+  }
+
   async testConnection(accountId?: bigint, connectionId?: bigint) {
     const config = accountId
       ? await this.getConfigForAccount(accountId, connectionId)
@@ -192,6 +204,8 @@ export class WoocommerceService {
         },
       });
 
+      const imageUrl = this.extractImageUrl(product);
+
       const localProduct = await this.prismaService.product.upsert({
         where: {
           accountId_sku: {
@@ -204,10 +218,12 @@ export class WoocommerceService {
           sku,
           name: name || sku,
           status: this.mapProductStatus(product.status),
+          ...(imageUrl ? { imageUrl } : {}),
         },
         update: {
           name: name || sku,
           status: this.mapProductStatus(product.status),
+          ...(imageUrl ? { imageUrl } : {}),
         },
       });
 
