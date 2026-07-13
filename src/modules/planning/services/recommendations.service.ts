@@ -14,6 +14,7 @@ export class RecommendationsService {
     return this.prisma.reorderRecommendation.findMany({
       where: {
         accountId,
+        product: { excludeFromPlanning: false },
       },
       include: {
         product: {
@@ -46,6 +47,7 @@ export class RecommendationsService {
       where: {
         accountId,
         status,
+        product: { excludeFromPlanning: false },
       },
       include: {
         product: {

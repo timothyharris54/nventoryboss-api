@@ -10,6 +10,9 @@ describe('ProductsService', () => {
       updateMany: jest.Mock;
       findFirst: jest.Mock;
     };
+    reorderRecommendation?: {
+      updateMany: jest.Mock;
+    };
   };
 
   beforeEach(async () => {
@@ -18,6 +21,9 @@ describe('ProductsService', () => {
         create: jest.fn(),
         updateMany: jest.fn(),
         findFirst: jest.fn(),
+      },
+      reorderRecommendation: {
+        updateMany: jest.fn(),
       },
     };
 
@@ -84,6 +90,29 @@ describe('ProductsService', () => {
     });
     expect(prismaMock.product?.findFirst).toHaveBeenCalledWith({
       where: { accountId: 7n, id: 42n },
+    });
+  });
+
+  it('excludes a product and supersedes its actionable recommendations', async () => {
+    prismaMock.product?.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.product?.findFirst.mockResolvedValue({
+      id: 42n,
+      excludeFromPlanning: true,
+    });
+
+    await service.update(7n, 42n, { excludeFromPlanning: true });
+
+    expect(prismaMock.product?.updateMany).toHaveBeenCalledWith({
+      where: { accountId: 7n, id: 42n },
+      data: { excludeFromPlanning: true },
+    });
+    expect(prismaMock.reorderRecommendation?.updateMany).toHaveBeenCalledWith({
+      where: {
+        accountId: 7n,
+        productId: 42n,
+        status: { in: ['open', 'reviewed'] },
+      },
+      data: { status: 'superseded' },
     });
   });
 });

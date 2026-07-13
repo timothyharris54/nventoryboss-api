@@ -22,6 +22,7 @@ export class ProductsService {
         sku: createProductDto.sku,
         name: createProductDto.name,
         imageUrl: createProductDto.imageUrl ?? null,
+        excludeFromPlanning: createProductDto.excludeFromPlanning ?? false,
       },
     });
   }
@@ -118,7 +119,7 @@ export class ProductsService {
   }
 
   async update(accountId: bigint, id: bigint, dto: Partial<CreateProductDto>) {
-    await this.prismaService.product.updateMany({
+    const result = await this.prismaService.product.updateMany({
       where: {
         accountId,
         id,
@@ -126,9 +127,25 @@ export class ProductsService {
       data: {
         ...(dto.sku ? { sku: dto.sku } : {}),
         ...(dto.name ? { name: dto.name } : {}),
-        ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl ?? null } : {}),
+        ...(dto.imageUrl !== undefined
+          ? { imageUrl: dto.imageUrl ?? null }
+          : {}),
+        ...(dto.excludeFromPlanning !== undefined
+          ? { excludeFromPlanning: dto.excludeFromPlanning }
+          : {}),
       },
     });
+
+    if (result.count === 1 && dto.excludeFromPlanning === true) {
+      await this.prismaService.reorderRecommendation.updateMany({
+        where: {
+          accountId,
+          productId: id,
+          status: { in: ['open', 'reviewed'] },
+        },
+        data: { status: 'superseded' },
+      });
+    }
 
     return this.prismaService.product.findFirst({
       where: {
@@ -138,7 +155,15 @@ export class ProductsService {
     });
   }
 
-  renderProductDetailView(product: { id?: bigint | number | null; name?: string | null; sku?: string | null; imageUrl?: string | null } | null) {
+  renderProductDetailView(
+    product: {
+      id?: bigint | number | null;
+      name?: string | null;
+      sku?: string | null;
+      imageUrl?: string | null;
+      excludeFromPlanning?: boolean | null;
+    } | null,
+  ) {
     if (!product) {
       return {
         found: false,
@@ -152,12 +177,19 @@ export class ProductsService {
     };
   }
 
-  private formatProductSummary(product: { id?: bigint | number | null; name?: string | null; sku?: string | null; imageUrl?: string | null }) {
+  private formatProductSummary(product: {
+    id?: bigint | number | null;
+    name?: string | null;
+    sku?: string | null;
+    imageUrl?: string | null;
+    excludeFromPlanning?: boolean | null;
+  }) {
     return {
       id: product.id?.toString?.() ?? product.id,
       name: product.name ?? null,
       sku: product.sku ?? null,
       imageUrl: product.imageUrl ?? null,
+      excludeFromPlanning: product.excludeFromPlanning ?? false,
       thumbnail: product.imageUrl
         ? {
             url: product.imageUrl,

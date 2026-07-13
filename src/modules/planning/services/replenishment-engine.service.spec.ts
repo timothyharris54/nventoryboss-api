@@ -8,6 +8,9 @@ describe('ReplenishmentEngineService', () => {
   let service: ReplenishmentEngineService;
 
   const prismaMock = {
+    product: {
+      findFirst: jest.fn(),
+    },
     replenishmentRule: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -50,6 +53,9 @@ describe('ReplenishmentEngineService', () => {
     );
 
     jest.clearAllMocks();
+    prismaMock.product.findFirst.mockResolvedValue({
+      excludeFromPlanning: false,
+    });
   });
   it('should be defined', () => {
     expect(service).toBeDefined();
@@ -275,5 +281,31 @@ describe('ReplenishmentEngineService', () => {
     await expect(service.generateForProduct(1n, 2n, 'MAIN')).rejects.toThrow(
       'inactive',
     );
+  });
+
+  it('refuses to plan an excluded product', async () => {
+    prismaMock.product.findFirst.mockResolvedValue({
+      excludeFromPlanning: true,
+    });
+
+    await expect(service.generateForProduct(1n, 2n, 'MAIN')).rejects.toThrow(
+      'excluded from planning',
+    );
+    expect(prismaMock.replenishmentRule.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('omits excluded products from account planning runs', async () => {
+    prismaMock.replenishmentRule.findMany.mockResolvedValue([]);
+
+    await service.generateForAccount(1n, 'MAIN');
+
+    expect(prismaMock.replenishmentRule.findMany).toHaveBeenCalledWith({
+      where: {
+        accountId: 1n,
+        isActive: true,
+        product: { excludeFromPlanning: false },
+      },
+      orderBy: { productId: 'asc' },
+    });
   });
 });

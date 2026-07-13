@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateProductDto {
   @IsString()
@@ -15,4 +21,8 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(2000)
   imageUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  excludeFromPlanning?: boolean;
 }

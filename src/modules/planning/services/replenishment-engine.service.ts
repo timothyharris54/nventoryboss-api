@@ -22,6 +22,23 @@ export class ReplenishmentEngineService {
     locationCode: string,
     dryRun = false,
   ) {
+    const product = await this.prisma.product.findFirst({
+      where: { accountId, id: productId },
+      select: { excludeFromPlanning: true },
+    });
+
+    if (!product) {
+      throw new NotFoundException(
+        `Product ${productId.toString()} was not found.`,
+      );
+    }
+
+    if (product.excludeFromPlanning) {
+      throw new BadRequestException(
+        `Product ${productId.toString()} is excluded from planning.`,
+      );
+    }
+
     const rule = await this.prisma.replenishmentRule.findUnique({
       where: {
         accountId_productId: {
@@ -161,6 +178,9 @@ export class ReplenishmentEngineService {
       where: {
         accountId,
         isActive: true,
+        product: {
+          excludeFromPlanning: false,
+        },
       },
       orderBy: {
         productId: 'asc',

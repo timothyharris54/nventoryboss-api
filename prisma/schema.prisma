@@ -181,6 +181,7 @@ model Product {
   sku             String
   name            String
   status          ProductStatus @default(active)
+  excludeFromPlanning Boolean @default(false)
   isVariant       Boolean       @default(false)
   parentProductId BigInt?
   imageUrl        String?

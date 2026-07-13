@@ -46,6 +46,7 @@ describe('RecommendationsService', () => {
       expect(prismaMock.reorderRecommendation.findMany).toHaveBeenCalledWith({
         where: {
           accountId: 10n,
+          product: { excludeFromPlanning: false },
         },
         include: {
           product: {
@@ -90,6 +91,7 @@ describe('RecommendationsService', () => {
         where: {
           accountId: 10n,
           status: RecommendationStatus.open,
+          product: { excludeFromPlanning: false },
         },
         include: {
           product: {
