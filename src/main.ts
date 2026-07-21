@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -31,6 +32,14 @@ function isLocalDevelopmentOrigin(origin: string): boolean {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  
+  // Enable helmet for security headers
+  app.use(helmet());
+  
+  // Trust X-Forwarded-Proto from load balancer (for HTTPS detection)
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', 1);
+  
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
