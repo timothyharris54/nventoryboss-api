@@ -52,6 +52,85 @@ const userRoles = [
   { code: 'warehouse_user', displayName: 'Warehouse User' },
   { code: 'system_admin', displayName: 'System Admin' },
 ] as const;
+const subscriptionFeatures = [
+  {
+    code: 'shopify_sync',
+    displayName: 'Shopify synchronization',
+    description: 'Synchronize Shopify products and orders.',
+  },
+  {
+    code: 'planning',
+    displayName: 'Inventory planning',
+    description: 'Sales history, replenishment, and recommendations.',
+  },
+  {
+    code: 'procurement',
+    displayName: 'Procurement',
+    description: 'Purchase orders, receipts, and recommendation conversion.',
+  },
+  {
+    code: 'locations',
+    displayName: 'Locations',
+    description: 'Maintain inventory locations.',
+  },
+  {
+    code: 'user_management',
+    displayName: 'User management',
+    description: 'Maintain users and role assignments.',
+  },
+  {
+    code: 'product_catalog',
+    displayName: 'Product catalog',
+    description: 'Maintain and synchronize products.',
+  },
+  {
+    code: 'ecommerce_connections',
+    displayName: 'Ecommerce connections',
+    description: 'Connect ecommerce stores.',
+  },
+] as const;
+
+const subscriptionPlans = [
+  {
+    code: 'starter',
+    displayName: 'Starter',
+    sortOrder: 10,
+    entitlements: {
+      shopify_sync: { enabled: true, limit: null },
+      planning: { enabled: false, limit: null },
+      procurement: { enabled: false, limit: null },
+      locations: { enabled: true, limit: 1 },
+      user_management: { enabled: true, limit: 3 },
+      product_catalog: { enabled: true, limit: 1000 },
+      ecommerce_connections: { enabled: true, limit: 1 },
+    },
+  },
+  {
+    code: 'growth',
+    displayName: 'Growth',
+    sortOrder: 20,
+    entitlements: {
+      shopify_sync: { enabled: true, limit: null },
+      planning: { enabled: true, limit: null },
+      procurement: { enabled: true, limit: null },
+      locations: { enabled: true, limit: 5 },
+      user_management: { enabled: true, limit: 15 },
+      product_catalog: { enabled: true, limit: 10000 },
+      ecommerce_connections: { enabled: true, limit: 3 },
+    },
+  },
+  {
+    code: 'professional',
+    displayName: 'Professional',
+    sortOrder: 30,
+    entitlements: Object.fromEntries(
+      subscriptionFeatures.map((feature) => [
+        feature.code,
+        { enabled: true, limit: null },
+      ]),
+    ),
+  },
+] as const;
 const daysAgoUtc = (daysAgo: number, hour = 12, minute = 0) => {
   const date = new Date();
   date.setUTCHours(hour, minute, 0, 0);
@@ -102,9 +181,76 @@ async function main() {
     ),
   );
 
+  const features = await Promise.all(
+    subscriptionFeatures.map((feature) =>
+      prisma.featureDefinition.upsert({
+        where: { code: feature.code },
+        update: {
+          displayName: feature.displayName,
+          description: feature.description,
+          isActive: true,
+        },
+        create: feature,
+      }),
+    ),
+  );
+  const featureByCode = new Map(
+    features.map((feature) => [feature.code, feature]),
+  );
+  const plans = await Promise.all(
+    subscriptionPlans.map(async (planDefinition) => {
+      const plan = await prisma.subscriptionPlan.upsert({
+        where: { code: planDefinition.code },
+        update: {
+          displayName: planDefinition.displayName,
+          isActive: true,
+          sortOrder: planDefinition.sortOrder,
+        },
+        create: {
+          code: planDefinition.code,
+          displayName: planDefinition.displayName,
+          isActive: true,
+          sortOrder: planDefinition.sortOrder,
+        },
+      });
+
+      await Promise.all(
+        Object.entries(planDefinition.entitlements).map(
+          ([featureCode, entitlement]) =>
+            prisma.planEntitlement.upsert({
+              where: {
+                planId_featureId: {
+                  planId: plan.id,
+                  featureId: featureByCode.get(featureCode)!.id,
+                },
+              },
+              update: entitlement,
+              create: {
+                planId: plan.id,
+                featureId: featureByCode.get(featureCode)!.id,
+                ...entitlement,
+              },
+            }),
+        ),
+      );
+
+      return plan;
+    }),
+  );
+  const planByCode = new Map(plans.map((plan) => [plan.code, plan]));
+
   const account = await prisma.account.create({
     data: {
       name: 'Local Demo Account',
+    },
+  });
+
+  await prisma.accountSubscription.create({
+    data: {
+      accountId: account.id,
+      planId: planByCode.get('professional')!.id,
+      status: 'active',
+      billingProvider: 'manual',
     },
   });
 
