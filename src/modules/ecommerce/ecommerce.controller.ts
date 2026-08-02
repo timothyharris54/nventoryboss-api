@@ -15,6 +15,7 @@ import { CreateEcommerceConnectionDto } from './dto/create-ecommerce-connection.
 import { UpdateEcommerceConnectionDto } from './dto/update-ecommerce-connection.dto';
 import { EcommerceConnectionsService } from './ecommerce-connections.service';
 import { WoocommerceService } from './woocommerce/woocommerce.service';
+import { ShopifyService } from './shopify/shopify.service';
 
 @Controller('ecommerce')
 @ApiTags('Ecommerce')
@@ -22,6 +23,7 @@ export class EcommerceController {
   constructor(
     private readonly ecommerceConnectionsService: EcommerceConnectionsService,
     private readonly woocommerceService: WoocommerceService,
+    private readonly shopifyService: ShopifyService,
   ) {}
 
   @Get('connections')
@@ -100,6 +102,38 @@ export class EcommerceController {
     @CurrentIdentity() identity: RequestIdentity,
   ) {
     return this.woocommerceService.postOrderInventoryImpact(
+      BigInt(identity.accountId),
+    );
+  }
+
+  @Post('shopify/test-connection')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  testShopifyConnection(@CurrentIdentity() identity: RequestIdentity) {
+    return this.shopifyService.testConnection(BigInt(identity.accountId));
+  }
+
+  @Post('shopify/sync-products')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  syncShopifyProducts(@CurrentIdentity() identity: RequestIdentity) {
+    return this.shopifyService.syncProducts(BigInt(identity.accountId));
+  }
+
+  @Post('shopify/sync-orders')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  syncShopifyOrders(@CurrentIdentity() identity: RequestIdentity) {
+    return this.shopifyService.syncOrders(BigInt(identity.accountId));
+  }
+
+  @Post('shopify/post-order-inventory-impact')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  postShopifyOrderInventoryImpact(
+    @CurrentIdentity() identity: RequestIdentity,
+  ) {
+    return this.shopifyService.postOrderInventoryImpact(
       BigInt(identity.accountId),
     );
   }

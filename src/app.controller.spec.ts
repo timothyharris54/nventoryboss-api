@@ -17,9 +17,9 @@ describe('AppController', () => {
   describe('root', () => {
     it('should return app status feedback', () => {
       expect(appController.getHello()).toEqual({
-        app: 'Nventory Boss',
+        app: 'NVentory Boss',
         status: 'running',
-        version: '0.0.5',
+        version: '0.1.6',
         uptime: expect.any(Number),
         timestamp: expect.any(String),
       });
