@@ -19,7 +19,7 @@ describe('AppController', () => {
       expect(appController.getHello()).toEqual({
         app: 'NVentory Boss',
         status: 'running',
-        version: '0.1.6',
+        version: '0.1.7',
         uptime: expect.any(Number),
         timestamp: expect.any(String),
       });

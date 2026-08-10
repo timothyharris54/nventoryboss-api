@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WoocommerceService } from 'src/modules/ecommerce/woocommerce/woocommerce.service';
+import { ShopifyService } from 'src/modules/ecommerce/shopify/shopify.service';
 import { ReplenishmentEngineService } from 'src/modules/planning/services/replenishment-engine.service';
 import { SalesDailyService } from 'src/modules/planning/services/sales-daily.service';
 import { SalesRefreshService } from './sales-refresh.service';
@@ -8,6 +9,13 @@ describe('SalesRefreshService', () => {
   let service: SalesRefreshService;
 
   const woocommerceServiceMock = {
+    getConnections: jest.fn(),
+    syncProducts: jest.fn(),
+    syncOrders: jest.fn(),
+    postOrderInventoryImpact: jest.fn(),
+  };
+
+  const shopifyServiceMock = {
     getConnections: jest.fn(),
     syncProducts: jest.fn(),
     syncOrders: jest.fn(),
@@ -33,6 +41,10 @@ describe('SalesRefreshService', () => {
           useValue: woocommerceServiceMock,
         },
         {
+          provide: ShopifyService,
+          useValue: shopifyServiceMock,
+        },
+        {
           provide: SalesDailyService,
           useValue: salesDailyServiceMock,
         },
@@ -47,11 +59,11 @@ describe('SalesRefreshService', () => {
 
     jest.clearAllMocks();
     woocommerceServiceMock.getConnections.mockReturnValue([
-        {
-          id: '10',
-          provider: 'woocommerce',
-          label: 'WooCommerce demo store',
-          storeUrl: 'https://example.test',
+      {
+        id: '10',
+        provider: 'woocommerce',
+        label: 'WooCommerce demo store',
+        storeUrl: 'https://example.test',
         configured: true,
       },
     ]);
@@ -59,6 +71,12 @@ describe('SalesRefreshService', () => {
     woocommerceServiceMock.syncOrders.mockResolvedValue({ synced: 3 });
     woocommerceServiceMock.postOrderInventoryImpact.mockResolvedValue({
       posted: 3,
+    });
+    shopifyServiceMock.getConnections.mockReturnValue([]);
+    shopifyServiceMock.syncProducts.mockResolvedValue({ synced: 4 });
+    shopifyServiceMock.syncOrders.mockResolvedValue({ synced: 5 });
+    shopifyServiceMock.postOrderInventoryImpact.mockResolvedValue({
+      posted: 5,
     });
     salesDailyServiceMock.rebuildForAccount.mockResolvedValue({
       deleted: 1,
@@ -134,5 +152,66 @@ describe('SalesRefreshService', () => {
     ).not.toHaveBeenCalled();
     expect(salesDailyServiceMock.rebuildForAccount).toHaveBeenCalled();
     expect(result.channels).toEqual([]);
+  });
+
+  it('syncs configured Shopify connections', async () => {
+    shopifyServiceMock.getConnections.mockReturnValue([
+      {
+        id: '20',
+        provider: 'shopify',
+        label: 'Shopify store',
+        storeUrl: 'https://example.myshopify.com',
+        configured: true,
+        channelKey: 'shopify-main',
+      },
+    ]);
+
+    const result = await service.refreshForAccount(1n);
+
+    expect(shopifyServiceMock.syncProducts).toHaveBeenCalledWith(1n, 20n);
+    expect(shopifyServiceMock.syncOrders).toHaveBeenCalledWith(1n, 20n);
+    expect(shopifyServiceMock.postOrderInventoryImpact).toHaveBeenCalledWith(
+      1n,
+      'MAIN',
+    );
+    expect(result.channels).toHaveLength(2);
+  });
+
+  it('refreshes only the requested configured connection', async () => {
+    shopifyServiceMock.getConnections.mockReturnValue([
+      {
+        id: '20',
+        provider: 'shopify',
+        label: 'Shopify store',
+        storeUrl: 'https://example.myshopify.com',
+        configured: true,
+        channelKey: 'shopify-main',
+      },
+    ]);
+
+    const result = await service.refreshForAccount(1n, { connectionId: '20' });
+
+    expect(woocommerceServiceMock.syncProducts).not.toHaveBeenCalled();
+    expect(shopifyServiceMock.syncProducts).toHaveBeenCalledWith(1n, 20n);
+    expect(result.channels).toHaveLength(1);
+  });
+
+  it('skips an unconfigured Shopify connection', async () => {
+    shopifyServiceMock.getConnections.mockReturnValue([
+      {
+        id: '20',
+        provider: 'shopify',
+        label: 'Shopify store',
+        storeUrl: null,
+        configured: false,
+        channelKey: 'shopify-main',
+      },
+    ]);
+
+    await service.refreshForAccount(1n, { connectionId: '20' });
+
+    expect(shopifyServiceMock.syncProducts).not.toHaveBeenCalled();
+    expect(shopifyServiceMock.syncOrders).not.toHaveBeenCalled();
+    expect(shopifyServiceMock.postOrderInventoryImpact).not.toHaveBeenCalled();
   });
 });

@@ -20,6 +20,7 @@ describe('ShopifyService', () => {
     prisma = {
       ecommerceConnection: {
         findFirst: jest.fn(),
+        findMany: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
       },
       ecommerceProductMapping: { upsert: jest.fn().mockResolvedValue({}) },
@@ -77,6 +78,52 @@ describe('ShopifyService', () => {
     global.fetch = fetchMock as unknown as typeof fetch;
     return fetchMock;
   }
+
+  it('returns configured Shopify connection metadata without credentials', async () => {
+    prisma.ecommerceConnection.findMany.mockResolvedValue([
+      {
+        id: 12n,
+        displayName: 'Teh Variety Store',
+        storeUrl: 'https://teh-variety-store.myshopify.com/',
+        credentials: { clientId: 'client-id', clientSecret: 'client-secret' },
+        channelKey: 'shopify-main',
+      },
+      {
+        id: 13n,
+        displayName: 'Incomplete Store',
+        storeUrl: null,
+        credentials: {},
+        channelKey: 'shopify-secondary',
+      },
+    ]);
+
+    await expect(service.getConnections(1n)).resolves.toEqual([
+      {
+        id: '12',
+        provider: 'shopify',
+        label: 'Teh Variety Store',
+        storeUrl: 'https://teh-variety-store.myshopify.com/',
+        configured: true,
+        channelKey: 'shopify-main',
+      },
+      {
+        id: '13',
+        provider: 'shopify',
+        label: 'Incomplete Store',
+        storeUrl: null,
+        configured: false,
+        channelKey: 'shopify-secondary',
+      },
+    ]);
+    expect(prisma.ecommerceConnection.findMany).toHaveBeenCalledWith({
+      where: {
+        accountId: 1n,
+        provider: EcommerceProvider.shopify,
+        isActive: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+  });
 
   it('exchanges client credentials and tests the store connection', async () => {
     const fetchMock = mockTokenAndGraphql({

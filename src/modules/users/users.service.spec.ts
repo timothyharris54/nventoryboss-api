@@ -50,6 +50,11 @@ describe('UsersService', () => {
     code: UserRoleCode.planner,
     displayName: 'Planner',
   };
+  const accountAdminRole = {
+    id: 22n,
+    code: UserRoleCode.account_admin,
+    displayName: 'Account Admin',
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -88,7 +93,7 @@ describe('UsersService', () => {
       fullName: 'New User',
       password: 'temporary-pass',
       roleCodes: [UserRoleCode.buyer, UserRoleCode.planner],
-    });
+    }, UserRoleCode.system_admin);
 
     expect(txMock.user.create).toHaveBeenCalledWith({
       data: {
@@ -124,7 +129,7 @@ describe('UsersService', () => {
         password: 'password1',
         temporaryPassword: 'temp-pass',
         roleCodes: [UserRoleCode.buyer],
-      }),
+      }, UserRoleCode.account_admin),
     ).rejects.toThrow(BadRequestException);
 
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
@@ -155,7 +160,7 @@ describe('UsersService', () => {
       fullName: 'Temp User',
       temporaryPassword: 'temporary-pass',
       roleCodes: [UserRoleCode.buyer, UserRoleCode.planner],
-    });
+    }, UserRoleCode.account_admin);
 
     expect(txMock.user.create).toHaveBeenCalledWith({
       data: {
@@ -188,7 +193,7 @@ describe('UsersService', () => {
         email: 'new@example.com',
         password: 'short-password',
         roleCodes: [UserRoleCode.buyer],
-      }),
+      }, UserRoleCode.account_admin),
     ).rejects.toThrow(BadRequestException);
 
     expect(authPasswordServiceMock.hashPassword).not.toHaveBeenCalled();
@@ -206,7 +211,7 @@ describe('UsersService', () => {
       service.create(1n, {
         email: 'new@example.com',
         roleCodes: [UserRoleCode.buyer],
-      }),
+      }, UserRoleCode.account_admin),
     ).rejects.toThrow(ConflictException);
 
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
@@ -220,7 +225,7 @@ describe('UsersService', () => {
       service.create(1n, {
         email: 'new@example.com',
         roleCodes: [UserRoleCode.buyer],
-      }),
+      }, UserRoleCode.account_admin),
     ).rejects.toThrow(BadRequestException);
 
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
@@ -253,7 +258,7 @@ describe('UsersService', () => {
       email: 'updated@example.com',
       fullName: 'Updated User',
       roleCodes: [UserRoleCode.planner],
-    });
+    }, UserRoleCode.system_admin);
 
     expect(txMock.user.update).toHaveBeenCalledWith({
       where: {
@@ -307,7 +312,7 @@ describe('UsersService', () => {
 
     await service.update(1n, 10n, {
       password: 'updated-password',
-    });
+    }, UserRoleCode.account_admin);
 
     expect(
       passwordPolicyServiceMock.assertPasswordMeetsAccountPolicy,
@@ -337,7 +342,7 @@ describe('UsersService', () => {
       userRoles: [{ role: buyerRole }],
     });
 
-    const result = await service.disable(1n, 10n);
+    const result = await service.disable(1n, 10n, UserRoleCode.system_admin);
 
     expect(txMock.user.update).toHaveBeenCalledWith({
       where: {
@@ -377,7 +382,9 @@ describe('UsersService', () => {
     });
     prismaMock.user.count.mockResolvedValue(0);
 
-    await expect(service.disable(1n, 10n)).rejects.toThrow(BadRequestException);
+    await expect(
+      service.disable(1n, 10n, UserRoleCode.system_admin),
+    ).rejects.toThrow(BadRequestException);
 
     expect(prismaMock.user.count).toHaveBeenCalledWith({
       where: {

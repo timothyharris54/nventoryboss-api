@@ -4,6 +4,9 @@ import {
   type EmailProvider,
 } from './interfaces/email-provider.interface';
 import { buildPasswordResetEmail } from './templates/password-reset-email.template';
+import { buildWelcomeEmail } from './templates/welcome-email.template';
+
+const WELCOME_EMAIL_FROM = 'info@NVentoryBoss.com';
 
 @Injectable()
 export class EmailService {
@@ -24,6 +27,21 @@ export class EmailService {
     });
 
     await this.provider.send({
+      to: input.to,
+      ...email,
+    });
+  }
+
+  async sendWelcomeEmail(input: {
+    to: string;
+    fullName: string;
+    accountName: string;
+    password: string;
+  }): Promise<void> {
+    const email = buildWelcomeEmail(input);
+
+    await this.provider.send({
+      from: WELCOME_EMAIL_FROM,
       to: input.to,
       ...email,
     });

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { WoocommerceService } from 'src/modules/ecommerce/woocommerce/woocommerce.service';
+import { ShopifyService } from 'src/modules/ecommerce/shopify/shopify.service';
 import { ReplenishmentEngineService } from 'src/modules/planning/services/replenishment-engine.service';
 import { SalesDailyService } from 'src/modules/planning/services/sales-daily.service';
 import { SalesRefreshDto } from './dto/sales-refresh.dto';
@@ -11,6 +12,7 @@ const DEFAULT_LOCATION_CODE = 'MAIN';
 export class SalesRefreshService {
   constructor(
     private readonly woocommerceService: WoocommerceService,
+    private readonly shopifyService: ShopifyService,
     private readonly salesDailyService: SalesDailyService,
     private readonly replenishmentEngineService: ReplenishmentEngineService,
   ) {}
@@ -22,6 +24,12 @@ export class SalesRefreshService {
     const now = new Date();
     const from = this.daysAgoUtc(now, lookbackDays);
     const activeConnections = await this.getActiveConnections(accountId);
+
+    const selectedConnections = dto.connectionId
+      ? activeConnections.filter(
+          (connection) => connection.id.toString() === dto.connectionId,
+        )
+      : activeConnections;
     const channelResults: Array<{
       connection: unknown;
       products: unknown;
@@ -29,7 +37,7 @@ export class SalesRefreshService {
       inventoryImpact: unknown;
     }> = [];
 
-    for (const connection of activeConnections) {
+    for (const connection of selectedConnections) {
       if (connection.provider === 'woocommerce') {
         const connectionId = BigInt(connection.id);
         const products = await this.woocommerceService.syncProducts(
@@ -42,6 +50,28 @@ export class SalesRefreshService {
         );
         const inventoryImpact =
           await this.woocommerceService.postOrderInventoryImpact(
+            accountId,
+            locationCode,
+          );
+
+        channelResults.push({
+          connection,
+          products,
+          orders,
+          inventoryImpact,
+        });
+      } else if (connection.provider === 'shopify') {
+        const connectionId = BigInt(connection.id);
+        const products = await this.shopifyService.syncProducts(
+          accountId,
+          connectionId,
+        );
+        const orders = await this.shopifyService.syncOrders(
+          accountId,
+          connectionId,
+        );
+        const inventoryImpact =
+          await this.shopifyService.postOrderInventoryImpact(
             accountId,
             locationCode,
           );
@@ -83,7 +113,12 @@ export class SalesRefreshService {
   }
 
   private async getActiveConnections(accountId: bigint) {
-    const connections = await this.woocommerceService.getConnections(accountId);
+    const connections = (
+      await Promise.all([
+        this.woocommerceService.getConnections(accountId),
+        this.shopifyService.getConnections(accountId),
+      ])
+    ).flat();
     return connections.filter((connection) => connection.configured);
   }
 

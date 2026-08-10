@@ -21,7 +21,7 @@ import { UsersService } from './users.service';
 @Controller('users')
 @ApiTags('Users')
 @ApiBearerAuth()
-@Roles(UserRoleCode.system_admin)
+@Roles(UserRoleCode.system_admin, UserRoleCode.account_admin)
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -41,7 +41,11 @@ export class UsersController {
     @CurrentIdentity() identity: RequestIdentity,
     @Body() createUserDto: CreateUserDto,
   ) {
-    return this.usersService.create(identity.accountId, createUserDto);
+    return this.usersService.create(
+      identity.accountId,
+      createUserDto,
+      identity.roleCode,
+    );
   }
 
   @Patch(':id')
@@ -54,6 +58,7 @@ export class UsersController {
       identity.accountId,
       BigInt(id),
       updateUserDto,
+      identity.roleCode,
     );
   }
 
@@ -62,6 +67,10 @@ export class UsersController {
     @CurrentIdentity() identity: RequestIdentity,
     @Param('id') id: string,
   ) {
-    return this.usersService.disable(identity.accountId, BigInt(id));
+    return this.usersService.disable(
+      identity.accountId,
+      BigInt(id),
+      identity.roleCode,
+    );
   }
 }

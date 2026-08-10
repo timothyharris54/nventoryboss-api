@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -48,8 +49,13 @@ export class UsersService {
     });
   }
 
-  async create(accountId: bigint, dto: CreateUserDto) {
+  async create(
+    accountId: bigint,
+    dto: CreateUserDto,
+    callerRoleCode: UserRoleCode,
+  ) {
     await this.assertEmailAvailable(accountId, dto.email);
+    this.assertCallerCanAssignRoles(callerRoleCode, dto.roleCodes);
 
     if (dto.password !== undefined && dto.temporaryPassword !== undefined) {
       throw new BadRequestException(
@@ -108,7 +114,12 @@ export class UsersService {
     return this.toUserMaintenanceResponse(user);
   }
 
-  async update(accountId: bigint, userId: bigint, dto: UpdateUserDto) {
+  async update(
+    accountId: bigint,
+    userId: bigint,
+    dto: UpdateUserDto,
+    callerRoleCode: UserRoleCode,
+  ) {
     const existingUser = await this.prisma.user.findFirst({
       where: {
         id: userId,
@@ -125,6 +136,10 @@ export class UsersService {
 
     if (!existingUser) {
       throw new NotFoundException('User not found');
+    }
+
+    if (callerRoleCode === UserRoleCode.account_admin) {
+      this.assertCallerCannotManageSystemAdmins(existingUser);
     }
 
     if (dto.email && dto.email !== existingUser.email) {
@@ -145,6 +160,11 @@ export class UsersService {
     const nextRoleCodes =
       roles?.map((role) => role.code) ??
       existingUser.userRoles.map((userRole) => userRole.role.code);
+
+    if (dto.roleCodes) {
+      this.assertCallerCanAssignRoles(callerRoleCode, nextRoleCodes);
+    }
+
     const nextIsActive = dto.isActive ?? existingUser.isActive;
 
     await this.assertSystemAdminAccessRemains(
@@ -206,8 +226,34 @@ export class UsersService {
     return this.toUserMaintenanceResponse(user);
   }
 
-  async disable(accountId: bigint, userId: bigint) {
-    return this.update(accountId, userId, { isActive: false });
+  async disable(
+    accountId: bigint,
+    userId: bigint,
+    callerRoleCode: UserRoleCode,
+  ) {
+    const existingUser = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        accountId,
+      },
+      include: {
+        userRoles: {
+          include: {
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!existingUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (callerRoleCode === UserRoleCode.account_admin) {
+      this.assertCallerCannotManageSystemAdmins(existingUser);
+    }
+
+    return this.update(accountId, userId, { isActive: false }, callerRoleCode);
   }
 
   private async assertEmailAvailable(
@@ -248,6 +294,40 @@ export class UsersService {
     }
 
     return roles;
+  }
+
+  private assertCallerCanAssignRoles(
+    callerRoleCode: UserRoleCode,
+    requestedRoleCodes: UserRoleCode[],
+  ) {
+    if (
+      callerRoleCode === UserRoleCode.account_admin &&
+      requestedRoleCodes.includes(UserRoleCode.system_admin)
+    ) {
+      throw new ForbiddenException(
+        'Account admins cannot assign system_admin role.',
+      );
+    }
+  }
+
+  private assertCallerCannotManageSystemAdmins(
+    user: {
+      userRoles: {
+        role: {
+          code: UserRoleCode;
+        };
+      }[];
+    },
+  ) {
+    if (
+      user.userRoles.some(
+        (userRole) => userRole.role.code === UserRoleCode.system_admin,
+      )
+    ) {
+      throw new ForbiddenException(
+        'Account admins cannot manage system_admin users.',
+      );
+    }
   }
 
   private async assertSystemAdminAccessRemains(
