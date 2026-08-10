@@ -13,12 +13,14 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { EcommerceModule } from './modules/ecommerce/ecommerce.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
+import { AddressesModule } from './modules/addresses/addresses.module';
 
 @Module({
   imports: [
     AuthModule,
     UsersModule,
     AccountsModule,
+    AddressesModule,
     PrismaModule,
     ProductsModule,
     InventoryModule,

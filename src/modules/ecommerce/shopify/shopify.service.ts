@@ -17,6 +17,15 @@ type ShopifyConfig = {
   defaultLocationCode: string;
 };
 
+type ShopifyConnection = {
+  id: string;
+  provider: 'shopify';
+  label: string;
+  storeUrl: string | null;
+  configured: boolean;
+  channelKey: string;
+};
+
 type PageInfo = { hasNextPage: boolean; endCursor?: string | null };
 type ShopifyProductsData = {
   products: { nodes: ShopifyProduct[]; pageInfo: PageInfo };
@@ -81,6 +90,34 @@ export class ShopifyService {
     private readonly inventoryService: InventoryService,
     private readonly subscriptionService: SubscriptionService,
   ) {}
+
+  async getConnections(accountId: bigint): Promise<ShopifyConnection[]> {
+    const connections = await this.prisma.ecommerceConnection.findMany({
+      where: {
+        accountId,
+        provider: EcommerceProvider.shopify,
+        isActive: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    return connections.map((connection) => {
+      const credentials = this.objectValue(connection.credentials);
+
+      return {
+        id: connection.id.toString(),
+        provider: 'shopify',
+        label: connection.displayName,
+        storeUrl: connection.storeUrl,
+        configured: Boolean(
+          connection.storeUrl &&
+          this.stringValue(credentials, 'clientId') &&
+          this.stringValue(credentials, 'clientSecret'),
+        ),
+        channelKey: connection.channelKey,
+      };
+    });
+  }
 
   async testConnection(accountId: bigint, connectionId?: bigint) {
     await this.subscriptionService.requireFeature(accountId, 'shopify_sync');

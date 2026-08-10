@@ -3,6 +3,14 @@ import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class SalesRefreshDto {
+  @ApiPropertyOptional({
+    example: '10',
+    description: 'Refresh only this ecommerce connection',
+  })
+  @IsOptional()
+  @IsString()
+  connectionId?: string;
+
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()

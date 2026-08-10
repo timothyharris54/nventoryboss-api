@@ -9,6 +9,7 @@ export class ConsoleEmailProvider implements EmailProvider {
   async send(message: EmailMessage): Promise<void> {
     this.logger.log(
       [
+        `From: ${message.from ?? 'default sender'}`,
         `Email queued for ${message.to}`,
         `Subject: ${message.subject}`,
         message.text,

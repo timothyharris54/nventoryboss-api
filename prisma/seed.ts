@@ -50,6 +50,7 @@ const userRoles = [
   { code: 'planner', displayName: 'Planner' },
   { code: 'warehouse_manager', displayName: 'Warehouse Manager' },
   { code: 'warehouse_user', displayName: 'Warehouse User' },
+  { code: 'account_admin', displayName: 'Account Admin' },
   { code: 'system_admin', displayName: 'System Admin' },
 ] as const;
 const subscriptionFeatures = [

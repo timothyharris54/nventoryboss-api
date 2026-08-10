@@ -91,6 +91,7 @@ enum UserRoleCode {
   planner
   warehouse_manager
   warehouse_user
+  account_admin
   system_admin
 }
 
@@ -141,6 +142,28 @@ model Account {
   securitySettings         AccountSecuritySettings?
   subscription             AccountSubscription?
   featureOverrides         AccountFeatureOverride[]
+  addresses                Address[]
+}
+
+model Address {
+  id              BigInt   @id @default(autoincrement())
+  accountId       BigInt
+  addressTypeCode String
+  label           String?
+  recipientName   String?
+  companyName     String?
+  addressLine1    String
+  addressLine2    String?
+  city            String
+  region          String?
+  postalCode      String?
+  countryCode     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, addressTypeCode])
 }
 
 model SubscriptionPlan {
