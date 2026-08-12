@@ -8,9 +8,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { UserRoleCode } from '@prisma/client';
 import { CurrentIdentity } from 'src/modules/auth/decorators/current-identity.decorator';
+import { Roles } from 'src/modules/auth/decorators/roles.decorator';
 import type { RequestIdentity } from 'src/modules/auth/interfaces/request-identity.interface';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/modules/auth/guards/roles.guard';
 import { CreateEcommerceConnectionDto } from './dto/create-ecommerce-connection.dto';
 import { UpdateEcommerceConnectionDto } from './dto/update-ecommerce-connection.dto';
 import { EcommerceConnectionsService } from './ecommerce-connections.service';
@@ -28,14 +31,16 @@ export class EcommerceController {
 
   @Get('connections')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRoleCode.system_admin, UserRoleCode.account_admin)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   getConnections(@CurrentIdentity() identity: RequestIdentity) {
     return this.ecommerceConnectionsService.findAll(BigInt(identity.accountId));
   }
 
   @Post('connections')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRoleCode.system_admin, UserRoleCode.account_admin)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   createConnection(
     @CurrentIdentity() identity: RequestIdentity,
     @Body() dto: CreateEcommerceConnectionDto,
@@ -48,7 +53,8 @@ export class EcommerceController {
 
   @Get('connections/:id')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRoleCode.system_admin, UserRoleCode.account_admin)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   getConnection(
     @CurrentIdentity() identity: RequestIdentity,
     @Param('id') id: string,
@@ -61,7 +67,8 @@ export class EcommerceController {
 
   @Patch('connections/:id')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRoleCode.system_admin, UserRoleCode.account_admin)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   updateConnection(
     @CurrentIdentity() identity: RequestIdentity,
     @Param('id') id: string,

@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { EcommerceAuthType, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/common/prisma/prisma.service';
+import { SubscriptionService } from '../accounts/subscription.service';
 import { CreateEcommerceConnectionDto } from './dto/create-ecommerce-connection.dto';
 import { UpdateEcommerceConnectionDto } from './dto/update-ecommerce-connection.dto';
 
-type EcommerceConnectionRecord =
-  Prisma.EcommerceConnectionGetPayload<object>;
+type EcommerceConnectionRecord = Prisma.EcommerceConnectionGetPayload<object>;
 
 type EcommerceConnectionResponse = Omit<
   EcommerceConnectionRecord,
@@ -17,13 +17,24 @@ type EcommerceConnectionResponse = Omit<
 
 @Injectable()
 export class EcommerceConnectionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subscriptionService: SubscriptionService,
+  ) {}
 
   async create(input: {
     accountId: bigint;
     dto: CreateEcommerceConnectionDto;
   }): Promise<EcommerceConnectionResponse> {
     const { accountId, dto } = input;
+    const currentUsage = await this.prisma.ecommerceConnection.count({
+      where: { accountId },
+    });
+    await this.subscriptionService.requireWithinLimit(
+      accountId,
+      'ecommerce_connections',
+      currentUsage,
+    );
     const connection = await this.prisma.ecommerceConnection.create({
       data: {
         accountId,
@@ -48,6 +59,10 @@ export class EcommerceConnectionsService {
   }
 
   async findAll(accountId: bigint): Promise<EcommerceConnectionResponse[]> {
+    await this.subscriptionService.requireFeature(
+      accountId,
+      'ecommerce_connections',
+    );
     const connections = await this.prisma.ecommerceConnection.findMany({
       where: {
         accountId,
@@ -64,6 +79,10 @@ export class EcommerceConnectionsService {
     accountId: bigint;
     id: bigint;
   }): Promise<EcommerceConnectionResponse> {
+    await this.subscriptionService.requireFeature(
+      input.accountId,
+      'ecommerce_connections',
+    );
     const connection = await this.getConnectionOrThrow(input);
     return this.toResponse(connection);
   }
@@ -73,6 +92,10 @@ export class EcommerceConnectionsService {
     id: bigint;
     dto: UpdateEcommerceConnectionDto;
   }): Promise<EcommerceConnectionResponse> {
+    await this.subscriptionService.requireFeature(
+      input.accountId,
+      'ecommerce_connections',
+    );
     await this.getConnectionOrThrow({
       accountId: input.accountId,
       id: input.id,
@@ -117,7 +140,9 @@ export class EcommerceConnectionsService {
         : undefined,
       displayName: dto.displayName?.trim(),
       storeUrl:
-        dto.storeUrl === undefined ? undefined : this.trimOptional(dto.storeUrl),
+        dto.storeUrl === undefined
+                  ? undefined
+                  : this.trimOptional(dto.storeUrl),
       externalStoreId:
         dto.externalStoreId === undefined
           ? undefined
