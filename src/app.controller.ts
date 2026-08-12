@@ -12,7 +12,7 @@ export class AppController {
     return {
       app: 'NVentory Boss',
       status: 'running',
-      version: '0.1.7',
+      version: '0.2.0',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     };

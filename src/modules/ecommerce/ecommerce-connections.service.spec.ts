@@ -2,17 +2,23 @@ import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EcommerceAuthType, EcommerceProvider } from '@prisma/client';
 import { PrismaService } from 'src/common/prisma/prisma.service';
+import { SubscriptionService } from '../accounts/subscription.service';
 import { EcommerceConnectionsService } from './ecommerce-connections.service';
 
 describe('EcommerceConnectionsService', () => {
   let service: EcommerceConnectionsService;
   const prismaMock = {
     ecommerceConnection: {
+      count: jest.fn(),
       create: jest.fn(),
       findMany: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+  };
+  const subscriptionServiceMock = {
+    requireFeature: jest.fn(),
+    requireWithinLimit: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -25,6 +31,10 @@ describe('EcommerceConnectionsService', () => {
           provide: PrismaService,
           useValue: prismaMock,
         },
+        {
+          provide: SubscriptionService,
+          useValue: subscriptionServiceMock,
+        },
       ],
     }).compile();
 
@@ -34,6 +44,7 @@ describe('EcommerceConnectionsService', () => {
   });
 
   it('creates an account-scoped connection and redacts credentials', async () => {
+    prismaMock.ecommerceConnection.count.mockResolvedValue(0);
     prismaMock.ecommerceConnection.create.mockResolvedValue({
       id: 10n,
       accountId: 1n,
@@ -72,6 +83,12 @@ describe('EcommerceConnectionsService', () => {
         currencyCode: 'usd',
       },
     });
+
+    expect(subscriptionServiceMock.requireWithinLimit).toHaveBeenCalledWith(
+      1n,
+      'ecommerce_connections',
+      0,
+    );
 
     expect(prismaMock.ecommerceConnection.create).toHaveBeenCalledWith({
       data: {
@@ -119,6 +136,10 @@ describe('EcommerceConnectionsService', () => {
         credentialKeys: ['token'],
       },
     ]);
+    expect(subscriptionServiceMock.requireFeature).toHaveBeenCalledWith(
+      1n,
+      'ecommerce_connections',
+    );
     expect(prismaMock.ecommerceConnection.findMany).toHaveBeenCalledWith({
       where: {
         accountId: 1n,
