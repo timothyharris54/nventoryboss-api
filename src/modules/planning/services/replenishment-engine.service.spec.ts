@@ -3,6 +3,7 @@ import { PrismaService } from 'src/common/prisma/prisma.service';
 import { ReplenishmentEngineService } from './replenishment-engine.service';
 import { SalesDailyService } from './sales-daily.service';
 import { InventoryPlanningService } from 'src/modules/inventory/services/inventory-planning.service';
+import { PlanningSettingsService } from './planning-settings.service';
 
 describe('ReplenishmentEngineService', () => {
   let service: ReplenishmentEngineService;
@@ -10,6 +11,7 @@ describe('ReplenishmentEngineService', () => {
   const prismaMock = {
     product: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
     },
     replenishmentRule: {
       findUnique: jest.fn(),
@@ -28,6 +30,9 @@ describe('ReplenishmentEngineService', () => {
   const inventoryPlanningServiceMock = {
     getPlanningPosition: jest.fn(),
   };
+  const planningSettingsServiceMock = {
+    getReplenishmentDefaults: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -45,6 +50,10 @@ describe('ReplenishmentEngineService', () => {
           provide: InventoryPlanningService,
           useValue: inventoryPlanningServiceMock,
         },
+        {
+          provide: PlanningSettingsService,
+          useValue: planningSettingsServiceMock,
+        },
       ],
     }).compile();
 
@@ -55,6 +64,13 @@ describe('ReplenishmentEngineService', () => {
     jest.clearAllMocks();
     prismaMock.product.findFirst.mockResolvedValue({
       excludeFromPlanning: false,
+      category: null,
+    });
+    planningSettingsServiceMock.getReplenishmentDefaults.mockResolvedValue({
+      safetyStock: 0,
+      targetDaysOfCover: 30,
+      leadTimeDays: 7,
+      minReorderQty: 0,
     });
   });
   it('should be defined', () => {
@@ -258,12 +274,54 @@ describe('ReplenishmentEngineService', () => {
     expect(result.recommendation).toBeNull();
   });
 
-  it('throws when no replenishment rule exists', async () => {
+  it('uses account defaults when no replenishment rule exists', async () => {
     prismaMock.replenishmentRule.findUnique.mockResolvedValue(null);
+    salesDailyServiceMock.getAverageDailySales.mockResolvedValue(1);
+    inventoryPlanningServiceMock.getPlanningPosition.mockResolvedValue({
+      accountId: 1n,
+      productId: 2n,
+      locationCode: 'MAIN',
+      qtyOnHand: 0,
+      qtyReserved: 0,
+      qtyIncoming: 0,
+      qtyAvailable: 0,
+    });
 
-    await expect(service.generateForProduct(1n, 2n, 'MAIN')).rejects.toThrow(
-      'No replenishment rule found',
-    );
+    const result = await service.generateForProduct(1n, 2n, 'MAIN', true);
+    expect(result.rule.source).toBe('account');
+    expect(result.calculation.recommendedQty).toBe(30);
+  });
+
+  it('uses category defaults when no product rule exists', async () => {
+    prismaMock.product.findFirst.mockResolvedValue({
+      excludeFromPlanning: false,
+      category: {
+        id: 9n,
+        safetyStock: 4,
+        targetDaysOfCover: 20,
+        leadTimeDays: 5,
+        minReorderQty: 12,
+      },
+    });
+    prismaMock.replenishmentRule.findUnique.mockResolvedValue(null);
+    salesDailyServiceMock.getAverageDailySales.mockResolvedValue(1);
+    inventoryPlanningServiceMock.getPlanningPosition.mockResolvedValue({
+      accountId: 1n,
+      productId: 2n,
+      locationCode: 'MAIN',
+      qtyOnHand: 8,
+      qtyReserved: 0,
+      qtyIncoming: 0,
+      qtyAvailable: 8,
+    });
+
+    const result = await service.generateForProduct(1n, 2n, 'MAIN', true);
+
+    expect(result.rule.source).toBe('category');
+    expect(result.rule.categoryId).toBe(9n);
+    expect(result.calculation.reorderPoint).toBe(9);
+    expect(result.calculation.targetStock).toBe(24);
+    expect(result.calculation.recommendedQty).toBe(16);
   });
 
   it('throws when replenishment rule is inactive', async () => {
@@ -295,17 +353,21 @@ describe('ReplenishmentEngineService', () => {
   });
 
   it('omits excluded products from account planning runs', async () => {
-    prismaMock.replenishmentRule.findMany.mockResolvedValue([]);
+    prismaMock.product.findMany.mockResolvedValue([]);
 
     await service.generateForAccount(1n, 'MAIN');
 
-    expect(prismaMock.replenishmentRule.findMany).toHaveBeenCalledWith({
+    expect(prismaMock.product.findMany).toHaveBeenCalledWith({
       where: {
         accountId: 1n,
-        isActive: true,
-        product: { excludeFromPlanning: false },
+        excludeFromPlanning: false,
+        OR: [
+          { replenishmentRule: { is: null } },
+          { replenishmentRule: { is: { isActive: true } } },
+        ],
       },
-      orderBy: { productId: 'asc' },
+      orderBy: { id: 'asc' },
+      select: { id: true },
     });
   });
 });

@@ -11,6 +11,7 @@ describe('SalesRefreshService', () => {
   const woocommerceServiceMock = {
     getConnections: jest.fn(),
     syncProducts: jest.fn(),
+    syncInventoryLevels: jest.fn(),
     syncOrders: jest.fn(),
     postOrderInventoryImpact: jest.fn(),
   };
@@ -68,6 +69,7 @@ describe('SalesRefreshService', () => {
       },
     ]);
     woocommerceServiceMock.syncProducts.mockResolvedValue({ synced: 2 });
+    woocommerceServiceMock.syncInventoryLevels.mockResolvedValue({ synced: 2 });
     woocommerceServiceMock.syncOrders.mockResolvedValue({ synced: 3 });
     woocommerceServiceMock.postOrderInventoryImpact.mockResolvedValue({
       posted: 3,
@@ -95,11 +97,19 @@ describe('SalesRefreshService', () => {
   it('syncs active channels, posts inventory impact, and rebuilds sales daily with the default lookback', async () => {
     const result = await service.refreshForAccount(1n);
 
-    expect(woocommerceServiceMock.syncProducts).toHaveBeenCalledWith(1n, 10n);
+    expect(woocommerceServiceMock.syncProducts).toHaveBeenCalledWith(1n, 10n, {
+      locationCode: 'MAIN',
+      reconcileInventory: false,
+    });
     expect(woocommerceServiceMock.syncOrders).toHaveBeenCalledWith(1n, 10n);
     expect(
       woocommerceServiceMock.postOrderInventoryImpact,
     ).toHaveBeenCalledWith(1n, 'MAIN');
+    expect(woocommerceServiceMock.syncInventoryLevels).toHaveBeenCalledWith(
+      1n,
+      10n,
+      'MAIN',
+    );
     expect(salesDailyServiceMock.rebuildForAccount).toHaveBeenCalledWith(
       1n,
       new Date('2026-02-06T00:00:00.000Z'),
@@ -208,7 +218,11 @@ describe('SalesRefreshService', () => {
       },
     ]);
 
-    await service.refreshForAccount(1n, { connectionId: '20' });
+    await expect(
+      service.refreshForAccount(1n, { connectionId: '20' }),
+    ).rejects.toThrow(
+      'The selected ecommerce connection is inactive, missing credentials, or unavailable for this account',
+    );
 
     expect(shopifyServiceMock.syncProducts).not.toHaveBeenCalled();
     expect(shopifyServiceMock.syncOrders).not.toHaveBeenCalled();

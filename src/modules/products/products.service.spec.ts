@@ -13,6 +13,9 @@ describe('ProductsService', () => {
     reorderRecommendation?: {
       updateMany: jest.Mock;
     };
+    productCategory?: {
+      findFirst: jest.Mock;
+    };
   };
 
   beforeEach(async () => {
@@ -24,6 +27,9 @@ describe('ProductsService', () => {
       },
       reorderRecommendation: {
         updateMany: jest.fn(),
+      },
+      productCategory: {
+        findFirst: jest.fn(),
       },
     };
 
@@ -90,6 +96,27 @@ describe('ProductsService', () => {
     });
     expect(prismaMock.product?.findFirst).toHaveBeenCalledWith({
       where: { accountId: 7n, id: 42n },
+      include: { category: true },
+    });
+  });
+
+  it('assigns only a category belonging to the current account', async () => {
+    prismaMock.productCategory?.findFirst.mockResolvedValue({ id: 9n });
+    prismaMock.product?.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.product?.findFirst.mockResolvedValue({
+      id: 42n,
+      category: { id: 9n, name: 'Treats' },
+    });
+
+    await service.update(7n, 42n, { categoryId: '9' });
+
+    expect(prismaMock.productCategory?.findFirst).toHaveBeenCalledWith({
+      where: { accountId: 7n, id: 9n },
+      select: { id: true },
+    });
+    expect(prismaMock.product?.updateMany).toHaveBeenCalledWith({
+      where: { accountId: 7n, id: 42n },
+      data: { categoryId: 9n },
     });
   });
 

@@ -132,6 +132,7 @@ model Account {
   salesDaily               SalesDaily[]
   inventoryReservations    InventoryReservation[]
   replenishmentRules       ReplenishmentRule[]
+  productCategories        ProductCategory[]
   reorderRecommendations   ReorderRecommendation[]
   planningSettings         PlanningSettings?
   locations                Location[]
@@ -325,6 +326,7 @@ model UserRole {
 model Product {
   id                  BigInt        @id @default(autoincrement())
   accountId           BigInt
+  categoryId          BigInt?
   sku                 String
   name                String
   status              ProductStatus @default(active)
@@ -335,9 +337,10 @@ model Product {
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
-  account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  parentProduct Product?  @relation("ProductParent", fields: [parentProductId], references: [id])
-  variants      Product[] @relation("ProductParent")
+  account       Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category      ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  parentProduct Product?         @relation("ProductParent", fields: [parentProductId], references: [id])
+  variants      Product[]        @relation("ProductParent")
 
   orderLines               OrderLine[]
   ledgerEntries            InventoryLedger[]
@@ -352,6 +355,29 @@ model Product {
   ecommerceProductMappings EcommerceProductMapping[]
 
   @@unique([accountId, sku])
+  @@index([accountId, categoryId])
+}
+
+model ProductCategory {
+  id          BigInt  @id @default(autoincrement())
+  accountId   BigInt
+  name        String
+  description String?
+
+  safetyStock       Decimal? @db.Decimal(12, 2)
+  targetDaysOfCover Int?
+  leadTimeDays      Int?
+  minReorderQty     Decimal? @db.Decimal(12, 2)
+  locationCode      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([accountId, name])
+  @@index([accountId])
 }
 
 model EcommerceConnection {
@@ -757,6 +783,12 @@ model PlanningSettings {
   demandOrderStatuses        String[] // e.g. ["FULFILLED", "SHIPPED"]
   demandDateBasis            String   @default("orderedAt") // future: createdAt, fulfilledAt, shippedAt, postedAt
   includeNegativeAdjustments Boolean  @default(false)
+
+  defaultSafetyStock       Decimal @default(0) @db.Decimal(12, 2)
+  defaultTargetDaysOfCover Int     @default(30)
+  defaultLeadTimeDays      Int     @default(7)
+  defaultMinReorderQty     Decimal @default(0) @db.Decimal(12, 2)
+  defaultLocationCode      String  @default("MAIN")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

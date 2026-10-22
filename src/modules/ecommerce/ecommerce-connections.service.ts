@@ -101,12 +101,19 @@ export class EcommerceConnectionsService {
       id: input.id,
     });
 
+    const data = this.toUpdateData(input.dto);
+    if (this.changesConnectionConfiguration(input.dto)) {
+      data.lastConnectionTestedAt = null;
+      data.lastConnectionStatus = null;
+      data.lastConnectionError = null;
+    }
+
     const connection = await this.prisma.ecommerceConnection.update({
       where: {
         id: input.id,
         accountId: input.accountId,
       },
-      data: this.toUpdateData(input.dto),
+      data,
     });
 
     return this.toResponse(connection);
@@ -164,6 +171,18 @@ export class EcommerceConnectionsService {
           : this.trimOptional(dto.currencyCode)?.toUpperCase(),
       isActive: dto.isActive,
     };
+  }
+
+  private changesConnectionConfiguration(
+    dto: UpdateEcommerceConnectionDto,
+  ): boolean {
+    return (
+      dto.provider !== undefined ||
+      dto.storeUrl !== undefined ||
+      dto.authType !== undefined ||
+      dto.credentials !== undefined ||
+      dto.isActive !== undefined
+    );
   }
 
   private toResponse(
