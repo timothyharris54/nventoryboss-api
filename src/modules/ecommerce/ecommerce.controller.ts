@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRoleCode } from '@prisma/client';
+import { CHANNEL_SYNCHRONIZATION_ROLES } from 'src/modules/auth/constants/channel-synchronization-roles';
 import { CurrentIdentity } from 'src/modules/auth/decorators/current-identity.decorator';
 import { Roles } from 'src/modules/auth/decorators/roles.decorator';
 import type { RequestIdentity } from 'src/modules/auth/interfaces/request-identity.interface';
@@ -16,6 +17,7 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/modules/auth/guards/roles.guard';
 import { CreateEcommerceConnectionDto } from './dto/create-ecommerce-connection.dto';
 import { UpdateEcommerceConnectionDto } from './dto/update-ecommerce-connection.dto';
+import { TestEcommerceConnectionDto } from './dto/test-ecommerce-connection.dto';
 import { EcommerceConnectionsService } from './ecommerce-connections.service';
 import { WoocommerceService } from './woocommerce/woocommerce.service';
 import { ShopifyService } from './shopify/shopify.service';
@@ -31,7 +33,7 @@ export class EcommerceController {
 
   @Get('connections')
   @ApiBearerAuth()
-  @Roles(UserRoleCode.system_admin, UserRoleCode.account_admin)
+  @Roles(...CHANNEL_SYNCHRONIZATION_ROLES)
   @UseGuards(JwtAuthGuard, RolesGuard)
   getConnections(@CurrentIdentity() identity: RequestIdentity) {
     return this.ecommerceConnectionsService.findAll(BigInt(identity.accountId));
@@ -84,27 +86,36 @@ export class EcommerceController {
   @Post('woocommerce/test-connection')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  testWoocommerceConnection(@CurrentIdentity() identity: RequestIdentity) {
-    return this.woocommerceService.testConnection(BigInt(identity.accountId));
+  testWoocommerceConnection(
+    @CurrentIdentity() identity: RequestIdentity,
+    @Body() dto: TestEcommerceConnectionDto,
+  ) {
+    return this.woocommerceService.testConnection(
+      BigInt(identity.accountId),
+      BigInt(dto.connectionId),
+    );
   }
 
   @Post('woocommerce/sync-products')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(...CHANNEL_SYNCHRONIZATION_ROLES)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   syncWoocommerceProducts(@CurrentIdentity() identity: RequestIdentity) {
     return this.woocommerceService.syncProducts(BigInt(identity.accountId));
   }
 
   @Post('woocommerce/sync-orders')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(...CHANNEL_SYNCHRONIZATION_ROLES)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   syncWoocommerceOrders(@CurrentIdentity() identity: RequestIdentity) {
     return this.woocommerceService.syncOrders(BigInt(identity.accountId));
   }
 
   @Post('woocommerce/post-order-inventory-impact')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(...CHANNEL_SYNCHRONIZATION_ROLES)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   postWoocommerceOrderInventoryImpact(
     @CurrentIdentity() identity: RequestIdentity,
   ) {
@@ -122,21 +133,24 @@ export class EcommerceController {
 
   @Post('shopify/sync-products')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(...CHANNEL_SYNCHRONIZATION_ROLES)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   syncShopifyProducts(@CurrentIdentity() identity: RequestIdentity) {
     return this.shopifyService.syncProducts(BigInt(identity.accountId));
   }
 
   @Post('shopify/sync-orders')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(...CHANNEL_SYNCHRONIZATION_ROLES)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   syncShopifyOrders(@CurrentIdentity() identity: RequestIdentity) {
     return this.shopifyService.syncOrders(BigInt(identity.accountId));
   }
 
   @Post('shopify/post-order-inventory-impact')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Roles(...CHANNEL_SYNCHRONIZATION_ROLES)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   postShopifyOrderInventoryImpact(
     @CurrentIdentity() identity: RequestIdentity,
   ) {

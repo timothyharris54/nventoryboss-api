@@ -7,6 +7,7 @@ import { PrismaService } from 'src/common/prisma/prisma.service';
 import { SalesDailyService } from 'src/modules/planning/services/sales-daily.service';
 import { InventoryPlanningService } from 'src/modules/inventory/services/inventory-planning.service';
 import { RecommendationStatus } from '@prisma/client';
+import { PlanningSettingsService } from './planning-settings.service';
 
 @Injectable()
 export class ReplenishmentEngineService {
@@ -14,17 +15,30 @@ export class ReplenishmentEngineService {
     private readonly prisma: PrismaService,
     private readonly salesDailyService: SalesDailyService,
     private readonly inventoryPlanningService: InventoryPlanningService,
+    private readonly planningSettingsService: PlanningSettingsService,
   ) {}
 
   async generateForProduct(
     accountId: bigint,
     productId: bigint,
-    locationCode: string,
+    locationCode?: string,
     dryRun = false,
   ) {
     const product = await this.prisma.product.findFirst({
       where: { accountId, id: productId },
-      select: { excludeFromPlanning: true },
+      select: {
+        excludeFromPlanning: true,
+        category: {
+          select: {
+            id: true,
+            safetyStock: true,
+            targetDaysOfCover: true,
+            leadTimeDays: true,
+            minReorderQty: true,
+            locationCode: true,
+          },
+        },
+      },
     });
 
     if (!product) {
@@ -48,18 +62,21 @@ export class ReplenishmentEngineService {
       },
     });
 
-    if (!rule) {
-      throw new NotFoundException(
-        `No replenishment rule found for product ${productId.toString()}.`,
-      );
-    }
-
-    if (!rule.isActive) {
+    if (rule && !rule.isActive) {
       throw new BadRequestException(
         `Replenishment rule for product ${productId.toString()} is inactive.`,
       );
     }
 
+    const accountDefaults =
+      await this.planningSettingsService.getReplenishmentDefaults(accountId);
+    const category = product.category;
+    const source = rule ? 'product' : category ? 'category' : 'account';
+    const resolvedLocationCode =
+      locationCode ??
+      rule?.locationCode ??
+      category?.locationCode ??
+      accountDefaults.locationCode;
     const avgDailySales = await this.salesDailyService.getAverageDailySales(
       accountId,
       productId,
@@ -70,13 +87,24 @@ export class ReplenishmentEngineService {
       await this.inventoryPlanningService.getPlanningPosition(
         accountId,
         productId,
-        locationCode,
+        resolvedLocationCode,
       );
-
-    const leadTimeDays = rule.overrideLeadTimeDays ?? 7;
-    const safetyStock = Number(rule.safetyStock ?? 0);
-    const targetDaysOfCover = rule.targetDaysOfCover ?? 30;
-    const minReorderQty = Number(rule.minReorderQty ?? 0);
+    const leadTimeDays =
+      rule?.overrideLeadTimeDays ??
+      category?.leadTimeDays ??
+      accountDefaults.leadTimeDays;
+    const safetyStock = Number(
+      rule?.safetyStock ?? category?.safetyStock ?? accountDefaults.safetyStock,
+    );
+    const targetDaysOfCover =
+      rule?.targetDaysOfCover ??
+      category?.targetDaysOfCover ??
+      accountDefaults.targetDaysOfCover;
+    const minReorderQty = Number(
+      rule?.minReorderQty ??
+        category?.minReorderQty ??
+        accountDefaults.minReorderQty,
+    );
 
     const leadTimeDemand = avgDailySales * leadTimeDays;
     const reorderPoint = leadTimeDemand + safetyStock;
@@ -107,7 +135,7 @@ export class ReplenishmentEngineService {
         where: {
           accountId,
           productId,
-          locationCode,
+          locationCode: resolvedLocationCode,
           status: RecommendationStatus.open,
         },
         data: {
@@ -120,7 +148,7 @@ export class ReplenishmentEngineService {
           data: {
             accountId,
             productId,
-            locationCode,
+            locationCode: resolvedLocationCode,
             recommendedQty: recommendedQty.toString(),
             daysUntilStockout:
               daysUntilStockout !== null ? daysUntilStockout.toString() : null,
@@ -144,9 +172,11 @@ export class ReplenishmentEngineService {
     return {
       dryRun,
       rule: {
-        accountId: rule.accountId,
-        productId: rule.productId,
-        locationCode: rule.locationCode,
+        source,
+        accountId,
+        productId,
+        categoryId: category?.id ?? null,
+        locationCode: resolvedLocationCode,
         safetyStock,
         targetDaysOfCover,
         leadTimeDays,
@@ -171,27 +201,29 @@ export class ReplenishmentEngineService {
 
   async generateForAccount(
     accountId: bigint,
-    locationCode: string,
+    locationCode?: string,
     dryRun = false,
   ) {
-    const rules = await this.prisma.replenishmentRule.findMany({
+    const products = await this.prisma.product.findMany({
       where: {
         accountId,
-        isActive: true,
-        product: {
-          excludeFromPlanning: false,
-        },
+        excludeFromPlanning: false,
+        OR: [
+          { replenishmentRule: { is: null } },
+          { replenishmentRule: { is: { isActive: true } } },
+        ],
       },
       orderBy: {
-        productId: 'asc',
+        id: 'asc',
       },
+      select: { id: true },
     });
     const results: Awaited<ReturnType<typeof this.generateForProduct>>[] = [];
 
-    for (const rule of rules) {
+    for (const product of products) {
       const result = await this.generateForProduct(
         accountId,
-        rule.productId,
+        product.id,
         locationCode,
         dryRun,
       );

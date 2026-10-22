@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { WoocommerceService } from 'src/modules/ecommerce/woocommerce/woocommerce.service';
 import { ShopifyService } from 'src/modules/ecommerce/shopify/shopify.service';
 import { ReplenishmentEngineService } from 'src/modules/planning/services/replenishment-engine.service';
@@ -30,11 +30,17 @@ export class SalesRefreshService {
           (connection) => connection.id.toString() === dto.connectionId,
         )
       : activeConnections;
+    if (dto.connectionId && selectedConnections.length === 0) {
+      throw new BadRequestException(
+        'The selected ecommerce connection is inactive, missing credentials, or unavailable for this account',
+      );
+    }
     const channelResults: Array<{
       connection: unknown;
       products: unknown;
       orders: unknown;
       inventoryImpact: unknown;
+      inventoryLevels?: unknown;
     }> = [];
 
     for (const connection of selectedConnections) {
@@ -43,6 +49,7 @@ export class SalesRefreshService {
         const products = await this.woocommerceService.syncProducts(
           accountId,
           connectionId,
+          { locationCode, reconcileInventory: false },
         );
         const orders = await this.woocommerceService.syncOrders(
           accountId,
@@ -53,12 +60,19 @@ export class SalesRefreshService {
             accountId,
             locationCode,
           );
+        const inventoryLevels =
+          await this.woocommerceService.syncInventoryLevels(
+            accountId,
+            connectionId,
+            locationCode,
+          );
 
         channelResults.push({
           connection,
           products,
           orders,
           inventoryImpact,
+          inventoryLevels,
         });
       } else if (connection.provider === 'shopify') {
         const connectionId = BigInt(connection.id);

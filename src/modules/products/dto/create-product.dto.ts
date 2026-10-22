@@ -25,4 +25,8 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   excludeFromPlanning?: boolean;
+
+  @IsOptional()
+  @IsString()
+  categoryId?: string | null;
 }

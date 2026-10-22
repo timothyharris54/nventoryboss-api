@@ -85,7 +85,7 @@ describe('ShopifyService', () => {
         id: 12n,
         displayName: 'Teh Variety Store',
         storeUrl: 'https://teh-variety-store.myshopify.com/',
-        credentials: { clientId: 'client-id', clientSecret: 'client-secret' },
+        credentials: { accessToken: 'shpat_test' },
         channelKey: 'shopify-main',
       },
       {
@@ -167,6 +167,42 @@ describe('ShopifyService', () => {
         lastConnectionError: null,
       }),
     });
+  });
+
+  it('uses a configured Admin API access token without a token exchange', async () => {
+    prisma.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 12n,
+      storeUrl: 'https://teh-variety-store.myshopify.com/',
+      credentials: { accessToken: 'shpat_test' },
+      settings: { apiVersion: '2026-07' },
+      defaultLocationCode: 'MAIN',
+    });
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        data: {
+          shop: {
+            id: 'gid://shopify/Shop/1',
+            name: 'Teh Variety Store',
+            myshopifyDomain: 'teh-variety-store.myshopify.com',
+          },
+        },
+      }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(service.testConnection(1n)).resolves.toEqual(
+      expect.objectContaining({ connectionId: '12', ok: true }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://teh-variety-store.myshopify.com/admin/api/2026-07/graphql.json',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-Shopify-Access-Token': 'shpat_test',
+        }),
+      }),
+    );
   });
 
   it('syncs product variants by SKU and records Shopify mappings', async () => {

@@ -186,6 +186,9 @@ describe('EcommerceConnectionsService', () => {
       data: expect.objectContaining({
         displayName: 'Updated Store',
         isActive: false,
+        lastConnectionTestedAt: null,
+        lastConnectionStatus: null,
+        lastConnectionError: null,
       }),
     });
     expect(result).toMatchObject({

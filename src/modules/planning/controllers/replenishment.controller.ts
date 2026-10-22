@@ -35,7 +35,7 @@ export class ReplenishmentController {
     return this.replenishmentEngineService.generateForProduct(
       identity.accountId,
       productId,
-      locationCode || 'MAIN',
+      locationCode,
       dryRun,
     );
   }
@@ -49,7 +49,7 @@ export class ReplenishmentController {
     const dryRun = this.parseBooleanQuery(dryRunParam);
     return this.replenishmentEngineService.generateForAccount(
       identity.accountId,
-      locationCode || 'MAIN',
+      locationCode,
       dryRun,
     );
   }

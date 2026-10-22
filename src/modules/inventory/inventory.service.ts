@@ -12,6 +12,7 @@ import {
   ReservationStatus,
   ReservationSourceType,
 } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { OpeningBalanceDto } from './dto/opening-balance.dto';
 import { AdjustmentsDto } from 'src/modules/inventory/dto/adjustments.dto';
 import { TransfersDto } from 'src/modules/inventory/dto/transfers.dto';
@@ -93,6 +94,62 @@ export class InventoryService {
       );
 
       return ledgerEntry;
+    });
+  }
+
+  async reconcileExternalStockLevel(input: {
+    accountId: bigint;
+    productId: bigint;
+    locationCode: string;
+    quantity: Prisma.Decimal.Value;
+    provider: string;
+    externalProductId: string;
+  }) {
+    const targetQuantity = new Prisma.Decimal(input.quantity);
+
+    return this.prismaService.$transaction(async (tx) => {
+      const balance = await tx.inventoryBalance.findUnique({
+        where: {
+          accountId_productId_locationCode: {
+            accountId: input.accountId,
+            productId: input.productId,
+            locationCode: input.locationCode,
+          },
+        },
+      });
+      const currentQuantity = balance?.qtyOnHand ?? new Prisma.Decimal(0);
+      const quantityDelta = targetQuantity.sub(currentQuantity);
+
+      if (quantityDelta.isZero()) {
+        return { action: 'unchanged' as const, quantity: targetQuantity };
+      }
+
+      const ledgerEntry = await tx.inventoryLedger.create({
+        data: {
+          accountId: input.accountId,
+          productId: input.productId,
+          locationCode: input.locationCode,
+          eventType: InventoryEventType.adjustment,
+          quantityDelta,
+          referenceType: ReferenceType.adjustment,
+          externalEventKey: `${input.accountId}:${input.provider}:product:${input.externalProductId}:stock:${Date.now()}:${randomUUID()}`,
+          occurredAt: new Date(),
+          notes: `${input.provider} stock reconciliation to ${targetQuantity.toString()}`,
+        },
+      });
+
+      await this.inventoryBalanceService.recalculateInventoryBalanceForProduct(
+        input.accountId,
+        input.productId,
+        input.locationCode,
+        tx,
+      );
+
+      return {
+        action: 'reconciled' as const,
+        quantity: targetQuantity,
+        ledgerEntry,
+      };
     });
   }
 

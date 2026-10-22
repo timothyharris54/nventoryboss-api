@@ -23,6 +23,9 @@ describe('InventoryService', () => {
       inventoryLedger: {
         create: jest.fn(),
       },
+      inventoryBalance: {
+        findUnique: jest.fn(),
+      },
       inventoryReservation: {
         findFirst: jest.fn(),
         create: jest.fn(),
@@ -87,6 +90,60 @@ describe('InventoryService', () => {
     }).compile();
 
     service = module.get<InventoryService>(InventoryService);
+  });
+
+  describe('reconcileExternalStockLevel', () => {
+    it('posts the delta needed to reach a negative external stock level', async () => {
+      txMock.inventoryBalance.findUnique.mockResolvedValue({
+        qtyOnHand: new Prisma.Decimal(3),
+      });
+      txMock.inventoryLedger.create.mockResolvedValue({ id: 99n });
+
+      const result = await service.reconcileExternalStockLevel({
+        accountId: 1n,
+        productId: 11n,
+        locationCode: 'MAIN',
+        quantity: -2,
+        provider: 'woocommerce',
+        externalProductId: '501',
+      });
+
+      expect(txMock.inventoryLedger.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          accountId: 1n,
+          productId: 11n,
+          locationCode: 'MAIN',
+          eventType: InventoryEventType.adjustment,
+          referenceType: ReferenceType.adjustment,
+          quantityDelta: new Prisma.Decimal(-5),
+        }),
+      });
+      expect(
+        inventoryBalanceServiceMock.recalculateInventoryBalanceForProduct,
+      ).toHaveBeenCalledWith(1n, 11n, 'MAIN', txMock);
+      expect(result.action).toBe('reconciled');
+    });
+
+    it('does not add a ledger entry when stock is already synchronized', async () => {
+      txMock.inventoryBalance.findUnique.mockResolvedValue({
+        qtyOnHand: new Prisma.Decimal(-2),
+      });
+
+      const result = await service.reconcileExternalStockLevel({
+        accountId: 1n,
+        productId: 11n,
+        locationCode: 'MAIN',
+        quantity: -2,
+        provider: 'woocommerce',
+        externalProductId: '501',
+      });
+
+      expect(txMock.inventoryLedger.create).not.toHaveBeenCalled();
+      expect(
+        inventoryBalanceServiceMock.recalculateInventoryBalanceForProduct,
+      ).not.toHaveBeenCalled();
+      expect(result.action).toBe('unchanged');
+    });
   });
 
   it('should be defined', () => {

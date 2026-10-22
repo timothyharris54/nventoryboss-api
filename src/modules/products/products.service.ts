@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { GetProductsQueryDto } from './dto/get-products-query.dto';
@@ -12,10 +12,14 @@ type ProductInput = {
 export class ProductsService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  create(input: ProductInput) {
+  async create(input: ProductInput) {
     const accountId = BigInt(input.accountId);
     const createProductDto = input.createProductDto;
 
+    const categoryId = await this.resolveCategoryId(
+      accountId,
+      createProductDto.categoryId,
+    );
     return this.prismaService.product.create({
       data: {
         accountId,
@@ -23,6 +27,7 @@ export class ProductsService {
         name: createProductDto.name,
         imageUrl: createProductDto.imageUrl ?? null,
         excludeFromPlanning: createProductDto.excludeFromPlanning ?? false,
+        categoryId,
       },
     });
   }
@@ -54,6 +59,7 @@ export class ProductsService {
             }
           : {}),
       },
+      include: { category: true },
       orderBy: [{ sku: 'asc' }, { id: 'asc' }],
       take,
       skip,
@@ -91,6 +97,7 @@ export class ProductsService {
     const [items, total] = await Promise.all([
       this.prismaService.product.findMany({
         where,
+        include: { category: true },
         orderBy: [{ sku: 'asc' }, { id: 'asc' }],
         take,
         skip,
@@ -115,10 +122,15 @@ export class ProductsService {
         id,
       },
       orderBy: { id: 'asc' },
+      include: { category: true },
     });
   }
 
   async update(accountId: bigint, id: bigint, dto: Partial<CreateProductDto>) {
+    const categoryId =
+      dto.categoryId !== undefined
+        ? await this.resolveCategoryId(accountId, dto.categoryId)
+        : undefined;
     const result = await this.prismaService.product.updateMany({
       where: {
         accountId,
@@ -133,6 +145,7 @@ export class ProductsService {
         ...(dto.excludeFromPlanning !== undefined
           ? { excludeFromPlanning: dto.excludeFromPlanning }
           : {}),
+        ...(dto.categoryId !== undefined ? { categoryId } : {}),
       },
     });
 
@@ -152,6 +165,7 @@ export class ProductsService {
         accountId,
         id,
       },
+      include: { category: true },
     });
   }
 
@@ -162,6 +176,7 @@ export class ProductsService {
       sku?: string | null;
       imageUrl?: string | null;
       excludeFromPlanning?: boolean | null;
+      category?: { id: bigint; name: string } | null;
     } | null,
   ) {
     if (!product) {
@@ -183,6 +198,7 @@ export class ProductsService {
     sku?: string | null;
     imageUrl?: string | null;
     excludeFromPlanning?: boolean | null;
+    category?: { id: bigint; name: string } | null;
   }) {
     return {
       id: product.id?.toString?.() ?? product.id,
@@ -190,6 +206,9 @@ export class ProductsService {
       sku: product.sku ?? null,
       imageUrl: product.imageUrl ?? null,
       excludeFromPlanning: product.excludeFromPlanning ?? false,
+      category: product.category
+        ? { id: product.category.id.toString(), name: product.category.name }
+        : null,
       thumbnail: product.imageUrl
         ? {
             url: product.imageUrl,
@@ -198,5 +217,25 @@ export class ProductsService {
           }
         : null,
     };
+  }
+
+  private async resolveCategoryId(accountId: bigint, value?: string | null) {
+    if (!value) return null;
+    let categoryId: bigint;
+    try {
+      categoryId = BigInt(value);
+    } catch {
+      throw new BadRequestException('Invalid categoryId.');
+    }
+    const category = await this.prismaService.productCategory.findFirst({
+      where: { accountId, id: categoryId },
+      select: { id: true },
+    });
+    if (!category) {
+      throw new BadRequestException(
+        'Product category was not found for this account.',
+      );
+    }
+    return category.id;
   }
 }

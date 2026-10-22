@@ -3,6 +3,11 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { setDefaultResultOrder } from 'node:dns';
+
+// Prefer a reachable IPv4 address on hosts without IPv6 egress. Node fetch can
+// otherwise time out when a storefront publishes both A and AAAA records.
+setDefaultResultOrder('ipv4first');
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();

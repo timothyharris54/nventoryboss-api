@@ -13,6 +13,9 @@ describe('WoocommerceService', () => {
       findUnique: jest.Mock;
       upsert: jest.Mock;
     };
+    productCategory: {
+      upsert: jest.Mock;
+    };
     order: {
       findMany: jest.Mock;
       findUnique: jest.Mock;
@@ -20,11 +23,13 @@ describe('WoocommerceService', () => {
     ecommerceConnection: {
       findMany: jest.Mock;
       findFirst: jest.Mock;
+      update: jest.Mock;
     };
     $transaction: jest.Mock;
   };
   let inventoryServiceMock: {
     postExternalChannelSaleEvent: jest.Mock;
+    reconcileExternalStockLevel: jest.Mock;
   };
   let txMock: {
     order: {
@@ -46,18 +51,23 @@ describe('WoocommerceService', () => {
         findUnique: jest.fn(),
         upsert: jest.fn(),
       },
-    order: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-    },
+      productCategory: {
+        upsert: jest.fn(),
+      },
+      order: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+      },
       ecommerceConnection: {
         findMany: jest.fn(),
         findFirst: jest.fn(),
+        update: jest.fn(),
       },
       $transaction: jest.fn(),
     };
     inventoryServiceMock = {
       postExternalChannelSaleEvent: jest.fn(),
+      reconcileExternalStockLevel: jest.fn(),
     };
     txMock = {
       order: {
@@ -166,6 +176,76 @@ describe('WoocommerceService', () => {
         },
       },
     );
+  });
+
+  it('tests the requested account connection and records success', async () => {
+    prismaMock.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 22n,
+      storeUrl: 'https://dexsdoghouse.com',
+      credentials: {
+        consumerKey: 'ck_account',
+        consumerSecret: 'cs_account',
+      },
+    });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue([]),
+    }) as unknown as typeof fetch;
+
+    await expect(service.testConnection(1n, 22n)).resolves.toEqual(
+      expect.objectContaining({ connectionId: '22', ok: true }),
+    );
+
+    expect(prismaMock.ecommerceConnection.findFirst).toHaveBeenCalledWith({
+      where: {
+        accountId: 1n,
+        provider: 'woocommerce',
+        isActive: true,
+        id: 22n,
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(prismaMock.ecommerceConnection.update).toHaveBeenCalledWith({
+      where: { id: 22n },
+      data: {
+        lastConnectionTestedAt: expect.any(Date),
+        lastConnectionStatus: 'connected',
+        lastConnectionError: null,
+      },
+    });
+  });
+
+  it('records the upstream WooCommerce error for the requested connection', async () => {
+    prismaMock.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 22n,
+      storeUrl: 'https://dexsdoghouse.com',
+      credentials: {
+        consumerKey: 'ck_account',
+        consumerSecret: 'cs_account',
+      },
+    });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: jest.fn().mockResolvedValue(
+        JSON.stringify({
+          code: 'woocommerce_rest_cannot_view',
+          message: 'Sorry, you cannot list resources.',
+        }),
+      ),
+    }) as unknown as typeof fetch;
+
+    await expect(service.testConnection(1n, 22n)).rejects.toThrow(
+      'WooCommerce products request failed',
+    );
+    expect(prismaMock.ecommerceConnection.update).toHaveBeenCalledWith({
+      where: { id: 22n },
+      data: {
+        lastConnectionTestedAt: expect.any(Date),
+        lastConnectionStatus: 'failed',
+        lastConnectionError: expect.stringContaining('upstream 401'),
+      },
+    });
   });
 
   it('requires credentials before calling WooCommerce', async () => {
@@ -292,6 +372,139 @@ describe('WoocommerceService', () => {
     );
   });
 
+  it('imports the first WooCommerce category and assigns it to the product', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue([
+          {
+            id: 30,
+            sku: 'DOG-3',
+            name: 'Biscuit',
+            status: 'publish',
+            categories: [{ id: 4, name: 'Treats' }],
+          },
+        ]),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue([]),
+      }) as unknown as typeof fetch;
+    prismaMock.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 10n,
+      storeUrl: 'https://dexsdoghouse.com',
+      credentials: { consumerKey: 'ck_test', consumerSecret: 'cs_test' },
+    });
+    prismaMock.product.findUnique.mockResolvedValue(null);
+    prismaMock.productCategory.upsert.mockResolvedValue({
+      id: 44n,
+      name: 'Treats',
+    });
+    prismaMock.product.upsert.mockResolvedValue({
+      id: 500n,
+      sku: 'DOG-3',
+      name: 'Biscuit',
+    });
+
+    await service.syncProducts(1n);
+
+    expect(prismaMock.productCategory.upsert).toHaveBeenCalledWith({
+      where: { accountId_name: { accountId: 1n, name: 'Treats' } },
+      create: { accountId: 1n, name: 'Treats' },
+      update: {},
+    });
+    expect(prismaMock.product.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ categoryId: 44n }),
+        update: expect.objectContaining({ categoryId: 44n }),
+      }),
+    );
+  });
+
+  it('reconciles managed WooCommerce stock, including negative quantities', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue([
+          {
+            id: 21,
+            sku: 'DOG-NEG',
+            name: 'Backordered toy',
+            status: 'publish',
+            manage_stock: true,
+            stock_quantity: -4,
+          },
+        ]),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue([]),
+      }) as unknown as typeof fetch;
+    prismaMock.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 10n,
+      storeUrl: 'https://dexsdoghouse.com',
+      credentials: { consumerKey: 'ck_test', consumerSecret: 'cs_test' },
+    });
+    prismaMock.product.findUnique.mockResolvedValue(null);
+    prismaMock.product.upsert.mockResolvedValue({
+      id: 789n,
+      sku: 'DOG-NEG',
+      name: 'Backordered toy',
+    });
+
+    await service.syncProducts(1n, 10n, { locationCode: 'WAREHOUSE' });
+
+    expect(
+      inventoryServiceMock.reconcileExternalStockLevel,
+    ).toHaveBeenCalledWith({
+      accountId: 1n,
+      productId: 789n,
+      locationCode: 'WAREHOUSE',
+      quantity: -4,
+      provider: 'woocommerce',
+      externalProductId: '21',
+    });
+  });
+
+  it('does not reconcile stock when WooCommerce does not manage it', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue([
+          {
+            id: 22,
+            sku: 'DOG-FREE',
+            name: 'Free stock',
+            manage_stock: false,
+          },
+        ]),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue([]),
+      }) as unknown as typeof fetch;
+    prismaMock.ecommerceConnection.findFirst.mockResolvedValue({
+      id: 10n,
+      storeUrl: 'https://dexsdoghouse.com',
+      credentials: { consumerKey: 'ck_test', consumerSecret: 'cs_test' },
+    });
+    prismaMock.product.findUnique.mockResolvedValue(null);
+    prismaMock.product.upsert.mockResolvedValue({
+      id: 790n,
+      sku: 'DOG-FREE',
+      name: 'Free stock',
+    });
+
+    await service.syncProducts(1n);
+
+    expect(
+      inventoryServiceMock.reconcileExternalStockLevel,
+    ).not.toHaveBeenCalled();
+  });
+
   it('syncs WooCommerce orders into local orders and lines', async () => {
     const fetchMock = jest
       .fn()
@@ -356,7 +569,7 @@ describe('WoocommerceService', () => {
       fetched: 1,
       synced: 1,
       skipped: 0,
-        items: [
+      items: [
         {
           woocommerceId: 9001,
           orderId: '7001',
@@ -401,7 +614,7 @@ describe('WoocommerceService', () => {
           channelOrderId: '9001',
         },
       },
-        create: {
+      create: {
         accountId: 1n,
         channel: 'woocommerce',
         channelOrderId: '9001',

@@ -3,13 +3,11 @@ import {
   BadRequestException,
   Injectable,
 } from '@nestjs/common';
-import {
-  EcommerceProvider,
-  Prisma,
-  ProductStatus,
-} from '@prisma/client';
+import { EcommerceProvider, Prisma, ProductStatus } from '@prisma/client';
+import * as https from 'node:https';
 import { PrismaService } from 'src/common/prisma/prisma.service';
 import { InventoryService } from 'src/modules/inventory/inventory.service';
+import { decode } from 'html-entities';
 
 type WoocommerceConnection = {
   id: string;
@@ -34,6 +32,9 @@ type WoocommerceProduct = {
   status?: string | null;
   images?: Array<{ src?: string | null }> | null;
   image?: { src?: string | null } | null;
+  manage_stock?: boolean | null;
+  stock_quantity?: number | string | null;
+  categories?: Array<{ id?: number; name?: string | null }> | null;
 };
 
 type WoocommerceOrder = {
@@ -98,6 +99,7 @@ const WOOCOMMERCE_PRODUCTS_PATH = '/wp-json/wc/v3/products';
 const WOOCOMMERCE_ORDERS_PATH = '/wp-json/wc/v3/orders';
 const DEFAULT_SYNC_PAGE_SIZE = 100;
 const MAX_SYNC_PAGES = 25;
+const WOOCOMMERCE_REQUEST_TIMEOUT_MS = 20_000;
 const INVENTORY_IMPACT_ORDER_STATUSES = ['processing', 'paid', 'completed'];
 
 @Injectable()
@@ -109,16 +111,18 @@ export class WoocommerceService {
 
   async getConnections(accountId?: bigint): Promise<WoocommerceConnection[]> {
     if (accountId) {
-      const connections = await this.prismaService.ecommerceConnection.findMany({
-        where: {
-          accountId,
-          provider: EcommerceProvider.woocommerce,
-          isActive: true,
+      const connections = await this.prismaService.ecommerceConnection.findMany(
+        {
+          where: {
+            accountId,
+            provider: EcommerceProvider.woocommerce,
+            isActive: true,
+          },
+          orderBy: {
+            id: 'asc',
+          },
         },
-        orderBy: {
-          id: 'asc',
-        },
-      });
+      );
 
       return connections.map((connection) => {
         const credentials = this.getCredentials(connection.credentials);
@@ -130,8 +134,8 @@ export class WoocommerceService {
           storeUrl: connection.storeUrl,
           configured: Boolean(
             connection.storeUrl &&
-              credentials.consumerKey &&
-              credentials.consumerSecret,
+            credentials.consumerKey &&
+            credentials.consumerSecret,
           ),
           channelKey: connection.channelKey,
         };
@@ -159,7 +163,9 @@ export class WoocommerceService {
       return directImage;
     }
 
-    const firstImage = product.images?.find((image) => image.src?.trim())?.src?.trim();
+    const firstImage = product.images
+      ?.find((image) => image.src?.trim())
+      ?.src?.trim();
     return firstImage ?? null;
   }
 
@@ -167,17 +173,39 @@ export class WoocommerceService {
     const config = accountId
       ? await this.getConfigForAccount(accountId, connectionId)
       : this.getConfig({ requireCredentials: true });
-    const products = await this.fetchProducts({ perPage: 1 }, config);
+    try {
+      const products = await this.fetchProducts({ perPage: 1 }, config);
 
-    return {
-      connectionId: config.connectionId,
-      ok: true,
-      productsEndpoint: this.getProductsEndpointForDisplay(config),
-      sampleCount: products.length,
-    };
+      if (accountId) {
+        await this.recordConnectionTest(
+          BigInt(config.connectionId),
+          'connected',
+        );
+      }
+
+      return {
+        connectionId: config.connectionId,
+        ok: true,
+        productsEndpoint: this.getProductsEndpointForDisplay(config),
+        sampleCount: products.length,
+      };
+    } catch (error) {
+      if (accountId) {
+        await this.recordConnectionTest(
+          BigInt(config.connectionId),
+          'failed',
+          this.getErrorMessage(error),
+        );
+      }
+      throw error;
+    }
   }
 
-  async syncProducts(accountId: bigint, connectionId?: bigint) {
+  async syncProducts(
+    accountId: bigint,
+    connectionId?: bigint,
+    options: { locationCode?: string; reconcileInventory?: boolean } = {},
+  ) {
     const config = await this.getConfigForAccount(accountId, connectionId);
     const products = await this.fetchAllProducts(config);
     const synced: SyncedProductSummary[] = [];
@@ -205,6 +233,16 @@ export class WoocommerceService {
       });
 
       const imageUrl = this.extractImageUrl(product);
+      const categoryName = decode(product.categories?.[0]?.name?.trim() || '');
+      const category = categoryName
+        ? await this.prismaService.productCategory.upsert({
+            where: {
+              accountId_name: { accountId, name: categoryName },
+            },
+            create: { accountId, name: categoryName },
+            update: {},
+          })
+        : null;
 
       const localProduct = await this.prismaService.product.upsert({
         where: {
@@ -218,14 +256,32 @@ export class WoocommerceService {
           sku,
           name: name || sku,
           status: this.mapProductStatus(product.status),
+          ...(category ? { categoryId: category.id } : {}),
           ...(imageUrl ? { imageUrl } : {}),
         },
         update: {
           name: name || sku,
           status: this.mapProductStatus(product.status),
+          ...(category ? { categoryId: category.id } : {}),
           ...(imageUrl ? { imageUrl } : {}),
         },
       });
+
+      if (
+        options.reconcileInventory !== false &&
+        product.manage_stock === true &&
+        product.stock_quantity !== null &&
+        product.stock_quantity !== undefined
+      ) {
+        await this.inventoryService.reconcileExternalStockLevel({
+          accountId,
+          productId: localProduct.id,
+          locationCode: options.locationCode ?? 'MAIN',
+          quantity: product.stock_quantity,
+          provider: 'woocommerce',
+          externalProductId: product.id.toString(),
+        });
+      }
 
       synced.push({
         woocommerceId: product.id,
@@ -244,6 +300,17 @@ export class WoocommerceService {
       items: synced,
       skippedItems: skipped,
     };
+  }
+
+  async syncInventoryLevels(
+    accountId: bigint,
+    connectionId?: bigint,
+    locationCode = 'MAIN',
+  ) {
+    return this.syncProducts(accountId, connectionId, {
+      locationCode,
+      reconcileInventory: true,
+    });
   }
 
   async syncOrders(accountId: bigint, connectionId?: bigint) {
@@ -528,14 +595,12 @@ export class WoocommerceService {
     let response: Response;
 
     try {
-      response = await fetch(url, {
-        headers: {
-          Authorization: this.buildBasicAuthHeader(
-            config.consumerKey,
-            config.consumerSecret,
-          ),
-          Accept: 'application/json',
-        },
+      response = await this.fetchWoocommerce(url, {
+        Authorization: this.buildBasicAuthHeader(
+          config.consumerKey,
+          config.consumerSecret,
+        ),
+        Accept: 'application/json',
       });
     } catch (error) {
       throw new BadGatewayException({
@@ -575,14 +640,12 @@ export class WoocommerceService {
     let response: Response;
 
     try {
-      response = await fetch(url, {
-        headers: {
-          Authorization: this.buildBasicAuthHeader(
-            config.consumerKey,
-            config.consumerSecret,
-          ),
-          Accept: 'application/json',
-        },
+      response = await this.fetchWoocommerce(url, {
+        Authorization: this.buildBasicAuthHeader(
+          config.consumerKey,
+          config.consumerSecret,
+        ),
+        Accept: 'application/json',
       });
     } catch (error) {
       throw new BadGatewayException({
@@ -651,7 +714,9 @@ export class WoocommerceService {
     });
 
     if (!connection) {
-      throw new BadRequestException('No active WooCommerce connection is configured');
+      throw new BadRequestException(
+        'No active WooCommerce connection is configured',
+      );
     }
 
     const credentials = this.getCredentials(connection.credentials);
@@ -763,6 +828,117 @@ export class WoocommerceService {
     return `Basic ${Buffer.from(`${consumerKey}:${consumerSecret}`).toString(
       'base64',
     )}`;
+  }
+
+  private async fetchWoocommerce(
+    url: string,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    try {
+      return await fetch(url, { headers });
+    } catch (fetchError) {
+      try {
+        return await this.fetchHttpsIpv4(url, headers);
+      } catch (ipv4Error) {
+        throw new Error(
+          `fetch failed (${this.getNetworkErrorMessage(fetchError)}); ` +
+            `IPv4 HTTPS fallback failed (${this.getNetworkErrorMessage(
+              ipv4Error,
+            )})`,
+        );
+      }
+    }
+  }
+
+  private fetchHttpsIpv4(
+    url: string,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== 'https:') {
+      throw new Error('WooCommerce store URL must use HTTPS');
+    }
+
+    return new Promise((resolve, reject) => {
+      const request = https.get(
+        parsedUrl,
+        { family: 4, headers },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on('data', (chunk: Buffer | string) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          response.on('error', reject);
+          response.on('end', () => {
+            resolve(
+              new Response(Buffer.concat(chunks), {
+                status: response.statusCode ?? 502,
+                statusText: response.statusMessage,
+              }),
+            );
+          });
+        },
+      );
+
+      request.setTimeout(WOOCOMMERCE_REQUEST_TIMEOUT_MS, () => {
+        request.destroy(
+          new Error(
+            `request timed out after ${WOOCOMMERCE_REQUEST_TIMEOUT_MS}ms`,
+          ),
+        );
+      });
+      request.on('error', reject);
+    });
+  }
+
+  private getNetworkErrorMessage(error: unknown): string {
+    if (!(error instanceof Error)) return 'unknown network error';
+
+    const cause = error.cause as
+      | { code?: string; message?: string; errors?: Array<{ code?: string }> }
+      | undefined;
+    const codes = cause?.errors
+      ?.map((item) => item.code)
+      .filter((code): code is string => Boolean(code));
+    const code = codes?.length ? [...new Set(codes)].join(', ') : cause?.code;
+    return [error.message, code].filter(Boolean).join(': ');
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof BadGatewayException) {
+      const response = error.getResponse();
+      if (typeof response === 'object' && response) {
+        const body = response as {
+          message?: string;
+          error?: string;
+          response?: string;
+          status?: number;
+        };
+        const detail = body.response || body.error;
+        if (detail) {
+          return `${body.message || 'WooCommerce request failed'}${
+            body.status ? ` (upstream ${body.status})` : ''
+          }: ${detail}`.slice(0, 1000);
+        }
+      }
+    }
+
+    return error instanceof Error ? error.message : 'Unknown WooCommerce error';
+  }
+
+  private async recordConnectionTest(
+    id: bigint,
+    status: 'connected' | 'failed',
+    error?: string,
+  ) {
+    await this.prismaService.ecommerceConnection.update({
+      where: { id },
+      data: {
+        lastConnectionTestedAt: new Date(),
+        lastConnectionStatus: status,
+        lastConnectionError: error ?? null,
+      },
+    });
   }
 
   private mapProductStatus(status?: string | null): ProductStatus {

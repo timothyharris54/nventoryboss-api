@@ -11,8 +11,9 @@ import { SubscriptionService } from 'src/modules/accounts/subscription.service';
 type ShopifyConfig = {
   connectionId: string;
   storeUrl: string;
-  clientId: string;
-  clientSecret: string;
+  accessToken: string | null;
+  clientId: string | null;
+  clientSecret: string | null;
   apiVersion: string;
   defaultLocationCode: string;
 };
@@ -37,6 +38,7 @@ type ShopifyProduct = {
   id: string;
   title: string;
   status: string;
+  productType?: string | null;
   featuredMedia?: {
     preview?: { image?: { url?: string | null } | null } | null;
   } | null;
@@ -103,6 +105,9 @@ export class ShopifyService {
 
     return connections.map((connection) => {
       const credentials = this.objectValue(connection.credentials);
+      const accessToken = this.stringValue(credentials, 'accessToken');
+      const clientId = this.stringValue(credentials, 'clientId');
+      const clientSecret = this.stringValue(credentials, 'clientSecret');
 
       return {
         id: connection.id.toString(),
@@ -111,8 +116,7 @@ export class ShopifyService {
         storeUrl: connection.storeUrl,
         configured: Boolean(
           connection.storeUrl &&
-          this.stringValue(credentials, 'clientId') &&
-          this.stringValue(credentials, 'clientSecret'),
+          (accessToken || (clientId && clientSecret)),
         ),
         channelKey: connection.channelKey,
       };
@@ -146,6 +150,14 @@ export class ShopifyService {
     const skippedItems: Array<Record<string, unknown>> = [];
 
     for (const product of products) {
+      const categoryName = product.productType?.trim();
+      const category = categoryName
+        ? await this.prisma.productCategory.upsert({
+            where: { accountId_name: { accountId, name: categoryName } },
+            create: { accountId, name: categoryName },
+            update: {},
+          })
+        : null;
       const variants = product.variants.nodes;
       for (const variant of variants) {
         const sku = variant.sku?.trim();
@@ -175,12 +187,14 @@ export class ShopifyService {
             name,
             status: this.mapProductStatus(product.status),
             isVariant,
+            ...(category ? { categoryId: category.id } : {}),
             ...(imageUrl ? { imageUrl } : {}),
           },
           update: {
             name,
             status: this.mapProductStatus(product.status),
             isVariant,
+            ...(category ? { categoryId: category.id } : {}),
             ...(imageUrl ? { imageUrl } : {}),
           },
         });
@@ -429,7 +443,7 @@ export class ShopifyService {
         config,
         `query Products($first: Int!, $after: String) {
         products(first: $first, after: $after) {
-          nodes { id title status featuredMedia { preview { image { url } } } variants(first: 100) { nodes { id title sku } } }
+          nodes { id title status productType featuredMedia { preview { image { url } } } variants(first: 100) { nodes { id title sku } } }
           pageInfo { hasNextPage endCursor }
         }
       }`,
@@ -518,6 +532,14 @@ export class ShopifyService {
   }
 
   private async getAccessToken(config: ShopifyConfig): Promise<string> {
+    if (config.accessToken) return config.accessToken;
+
+    if (!config.clientId || !config.clientSecret) {
+      throw new BadRequestException(
+        'Shopify Admin API access token or client ID and client secret must be configured',
+      );
+    }
+
     const cached = this.tokens.get(config.connectionId);
     if (cached && cached.expiresAt > Date.now() + 60_000)
       return cached.accessToken;
@@ -582,16 +604,21 @@ export class ShopifyService {
       );
     const credentials = this.objectValue(connection.credentials);
     const settings = this.objectValue(connection.settings);
+    const accessToken = this.stringValue(credentials, 'accessToken');
     const clientId = this.stringValue(credentials, 'clientId');
     const clientSecret = this.stringValue(credentials, 'clientSecret');
-    if (!connection.storeUrl || !clientId || !clientSecret) {
+    if (
+      !connection.storeUrl ||
+      (!accessToken && (!clientId || !clientSecret))
+    ) {
       throw new BadRequestException(
-        'Shopify store URL, client ID, and client secret must be configured',
+        'Shopify store URL and either an Admin API access token or client ID and client secret must be configured',
       );
     }
     return {
       connectionId: connection.id.toString(),
       storeUrl: this.normalizeStoreUrl(connection.storeUrl),
+      accessToken,
       clientId,
       clientSecret,
       apiVersion:
